@@ -13,7 +13,7 @@ Thank you for your interest in contributing to Vector Inference! This guide will
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/VectorInstitute/vector-inference.git
+   git clone git@github.com:Cuena/vector-inference-mn5.git
    cd vector-inference
    ```
 
@@ -171,4 +171,4 @@ Documentation is automatically deployed through GitHub Actions:
 
 ## License
 
-By contributing to Vector Inference, you agree that your contributions will be licensed under the project's [MIT License](https://github.com/VectorInstitute/vector-inference/blob/main/LICENSE).
+By contributing to Vector Inference, you agree that your contributions will be licensed under the project's MIT License.

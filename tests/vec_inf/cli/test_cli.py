@@ -76,6 +76,51 @@ def test_launch_command_with_json_output(runner):
         assert output.get("model_name") == "Meta-Llama-3.1-8B"
 
 
+def test_launch_command_dry_run_outputs_preview(runner):
+    """Test launch dry-run prints generated sbatch preview without submitting."""
+    with patch("vec_inf.cli._cli.VecInfClient") as mock_client_class:
+        mock_client = MagicMock()
+        mock_client_class.return_value = mock_client
+        mock_client.preview_launch_model.return_value = {
+            "model_name": "Meta-Llama-3.1-8B",
+            "config": {
+                "model_name": "Meta-Llama-3.1-8B",
+                "env": {"CACHE_DIR": "/cache"},
+                "num_nodes": "1",
+            },
+            "sbatch_script": "#!/bin/bash\n#SBATCH --job-name=Meta-Llama-3.1-8B-vec-inf\n",
+        }
+
+        result = runner.invoke(cli, ["launch", "Meta-Llama-3.1-8B", "--dry-run"])
+
+        assert result.exit_code == 0
+        assert "Dry run: no job was submitted" in result.output
+        assert "#!/bin/bash" in result.output
+        mock_client.preview_launch_model.assert_called_once()
+        mock_client.launch_model.assert_not_called()
+
+
+def test_launch_command_dry_run_json_output(runner):
+    """Test launch dry-run JSON output includes config and generated sbatch."""
+    with patch("vec_inf.cli._cli.VecInfClient") as mock_client_class:
+        mock_client = MagicMock()
+        mock_client_class.return_value = mock_client
+        mock_client.preview_launch_model.return_value = {
+            "model_name": "Meta-Llama-3.1-8B",
+            "config": {"model_name": "Meta-Llama-3.1-8B"},
+            "sbatch_script": "#!/bin/bash\n",
+        }
+
+        result = runner.invoke(
+            cli, ["launch", "Meta-Llama-3.1-8B", "--dry-run", "--json-mode"]
+        )
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        assert output["model_name"] == "Meta-Llama-3.1-8B"
+        assert output["sbatch_script"].startswith("#!/bin/bash")
+
+
 def test_launch_command_model_not_found(runner):
     """Test handling of a model that's neither in config nor has weights."""
     with patch("vec_inf.cli._cli.VecInfClient") as mock_client_class:

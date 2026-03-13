@@ -1,6 +1,7 @@
 """Slurm cluster configuration variables."""
 
 import os
+import re
 import warnings
 from pathlib import Path
 from typing import Any, TypeAlias
@@ -10,6 +11,59 @@ from typing_extensions import Literal
 
 
 CACHED_CONFIG_DIR = Path("/model-weights/vec-inf-shared")
+_PATH_VAR_PATTERN = re.compile(r"\$(\w+)|\$\{(\w+)(?::-([^}]*))?\}")
+
+
+def expand_path_placeholders(value: str) -> str:
+    """Expand env placeholders in path-like config values.
+
+    Supports ``$VAR``, ``${VAR}``, and ``${VAR:-default}`` forms. Expansion is
+    applied repeatedly so defaults can themselves contain other placeholders.
+    """
+
+    def _replace(match: re.Match[str]) -> str:
+        simple_var = match.group(1)
+        braced_var = match.group(2)
+        default_value = match.group(3)
+        var_name = simple_var or braced_var or ""
+        if var_name in os.environ:
+            return os.environ[var_name]
+        if default_value is not None:
+            return default_value
+        return match.group(0)
+
+    expanded = value
+    for _ in range(10):
+        next_value = _PATH_VAR_PATTERN.sub(_replace, expanded)
+        if next_value == expanded:
+            break
+        expanded = next_value
+    return os.path.expanduser(expanded)
+
+
+def _expand_known_path_fields(config: dict[str, Any]) -> dict[str, Any]:
+    """Expand env/user placeholders for config fields resolved in Python."""
+    path_sections = {
+        "paths": [
+            "image_path",
+            "vllm_image_path",
+            "sglang_image_path",
+            "cached_model_config_path",
+        ],
+        "default_args": ["log_dir", "model_weights_parent_dir", "work_dir", "venv"],
+    }
+
+    for section, keys in path_sections.items():
+        values = config.get(section)
+        if not isinstance(values, dict):
+            continue
+        for key in keys:
+            raw_value = values.get(key)
+            if not raw_value or not isinstance(raw_value, str):
+                continue
+            values[key] = expand_path_placeholders(raw_value)
+
+    return config
 
 
 def load_env_config() -> dict[str, Any]:
@@ -46,7 +100,7 @@ def load_env_config() -> dict[str, Any]:
                 stacklevel=2,
             )
 
-    return config
+    return _expand_known_path_fields(config)
 
 
 _config = load_env_config()
@@ -61,6 +115,9 @@ CACHED_MODEL_CONFIG_PATH = Path(_config["paths"]["cached_model_config_path"])
 # Extract containerization info
 CONTAINER_LOAD_CMD = _config["containerization"]["module_load_cmd"]
 CONTAINER_MODULE_NAME = _config["containerization"]["module_name"]
+CUDA_COMPAT_SHIM_DEFAULT: bool = bool(
+    (_config.get("containerization") or {}).get("cuda_compat_shim_default", False)
+)
 
 # Extract limits
 MAX_GPUS_PER_NODE = _config["limits"]["max_gpus_per_node"]
@@ -93,3 +150,9 @@ PYTHON_VERSION: str = _config["python_version"]
 
 # Extract default arguments
 DEFAULT_ARGS: dict[str, str] = _config["default_args"]
+
+# Optional cluster behavior
+CPU_PER_GPU: int | None = (
+    int(_config["cpu_per_gpu"]) if _config.get("cpu_per_gpu") is not None else None
+)
+DISABLE_MEM_DIRECTIVE: bool = bool(_config.get("disable_mem_directive", False))

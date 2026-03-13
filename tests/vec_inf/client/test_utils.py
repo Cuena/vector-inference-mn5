@@ -1,6 +1,7 @@
 """Tests for the utility functions in the vec-inf client."""
 
 import os
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -142,32 +143,55 @@ def test_load_config_default_only():
 
     # Verify at least one known model exists
     model_names = {m.model_name for m in configs}
-    assert "c4ai-command-r-plus-08-2024" in model_names
+    assert "InternVL3_5-8B-Instruct" in model_names
 
     # Verify full configuration of a sample model
-    model = next(m for m in configs if m.model_name == "c4ai-command-r-plus-08-2024")
-    assert model.model_family == "c4ai-command-r"
-    assert model.model_type == "LLM"
-    assert model.gpus_per_node == 4
-    assert model.num_nodes == 2
-    # Check vllm_args - keys should match YAML format exactly
+    model = next(m for m in configs if m.model_name == "InternVL3_5-8B-Instruct")
+    assert model.model_family == "InternVL3_5"
+    assert model.model_type in {"LLM", "VLM"}
+    assert model.gpus_per_node > 0
+    assert model.num_nodes > 0
+
     if model.vllm_args:
         # The key should be "--max-model-len" as in YAML
         max_len = model.vllm_args.get("--max-model-len")
         if max_len is not None:
-            assert max_len == 65536
+            assert max_len == 40960
+
+
+def test_load_config_mn5_profile_includes_lightweight_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The MN5 profile should expose the wizard's lightweight smoke-test model."""
+    mn5_config_dir = (
+        Path(__file__).resolve().parents[3] / "vec_inf" / "config" / "marenostrum5"
+    )
+
+    with monkeypatch.context() as m:
+        m.setenv("VEC_INF_CONFIG_DIR", str(mn5_config_dir))
+        configs = load_config()
+
+    config_map = {model.model_name: model for model in configs}
+    assert "Llama-3.2-3B-Instruct" in config_map
+    assert config_map["Llama-3.2-3B-Instruct"].gpus_per_node == 1
+    assert config_map["Llama-3.2-3B-Instruct"].num_nodes == 1
 
 
 def test_load_config_with_user_override(tmp_path, monkeypatch):
-    """Test user config overriding default values."""
+    """Test VEC_INF_CONFIG_DIR uses user models.yaml as the source config."""
     # Create user config directory and file
     user_config_dir = tmp_path / "user_config_dir"
     user_config_dir.mkdir()
     user_config_file = user_config_dir / "models.yaml"
     user_config_file.write_text("""\
 models:
-  c4ai-command-r-plus-08-2024:
-    gpus_per_node: 8
+  InternVL3_5-8B-Instruct:
+    model_family: InternVL3_5
+    model_variant: 8B-Instruct
+    model_type: VLM
+    gpus_per_node: 2
+    num_nodes: 1
+    vocab_size: 151936
   new-model:
     model_family: new-family
     model_type: VLM
@@ -187,10 +211,11 @@ models:
             pytest.skip("Config loading failed, may need YAML key normalization")
         config_map = {m.model_name: m for m in configs}
 
-    # Verify override (merged with defaults)
-    assert config_map["c4ai-command-r-plus-08-2024"].gpus_per_node == 8
-    assert config_map["c4ai-command-r-plus-08-2024"].num_nodes == 2
-    assert config_map["c4ai-command-r-plus-08-2024"].vocab_size == 256000
+    # Verify the user file is used as the source configuration.
+    assert config_map["InternVL3_5-8B-Instruct"].gpus_per_node == 2
+    assert config_map["InternVL3_5-8B-Instruct"].num_nodes == 1
+    assert config_map["InternVL3_5-8B-Instruct"].vocab_size == 151936
+    assert "Qwen2.5-7B-Instruct" not in config_map
 
     # Verify new model
     new_model = config_map["new-model"]

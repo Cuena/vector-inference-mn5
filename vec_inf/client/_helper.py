@@ -5,6 +5,7 @@ metrics collection, and model registry operations.
 """
 
 import json
+import os
 import time
 import warnings
 from pathlib import Path
@@ -32,7 +33,13 @@ from vec_inf.client._slurm_script_generator import (
     BatchSlurmScriptGenerator,
     SlurmScriptGenerator,
 )
-from vec_inf.client._slurm_vars import CONTAINER_MODULE_NAME, IMAGE_PATH
+from vec_inf.client._slurm_vars import (
+    CONTAINER_MODULE_NAME,
+    CPU_PER_GPU,
+    DISABLE_MEM_DIRECTIVE,
+    IMAGE_PATH,
+    MAX_CPUS_PER_TASK,
+)
 from vec_inf.client.config import ModelConfig
 from vec_inf.client.models import (
     BatchLaunchResponse,
@@ -116,7 +123,10 @@ class ModelLauncher:
                 "Could not determine model weights parent directory"
             )
 
-        model_weights_path = Path(model_weights_parent_dir, self.model_name)
+        model_weights_dir_name = self.kwargs.get(
+            "model_weights_dir_name", self.model_name
+        )
+        model_weights_path = Path(model_weights_parent_dir, model_weights_dir_name)
 
         # Only give a warning if weights exist but config missing
         if model_weights_path.exists():
@@ -297,7 +307,6 @@ class ModelLauncher:
         MissingRequiredFieldsError
             If tensor parallel size is not specified when using multiple GPUs
         ValueError
-            If total # of GPUs requested is not a power of two
             If mismatch between total # of GPUs requested and parallelization settings
         """
         if (
@@ -309,8 +318,6 @@ class ModelLauncher:
             )
 
         total_gpus_requested = int(params["gpus_per_node"]) * int(params["num_nodes"])
-        if not utils.is_power_of_two(total_gpus_requested):
-            raise ValueError("Total number of GPUs requested must be a power of two")
 
         total_parallel_sizes = int(
             params["engine_args"].get("--tensor-parallel-size", "1")
@@ -342,6 +349,17 @@ class ModelLauncher:
             f"{params['log_dir']}/{self.model_name}.$SLURM_JOB_ID/{self.model_name}.$SLURM_JOB_ID.json"
         )
 
+    def _apply_cluster_policies(self, params: dict[str, Any]) -> None:
+        """Apply optional cluster-specific launch policies."""
+        if CPU_PER_GPU is not None:
+            gpus_per_node = int(params.get("gpus_per_node", 1))
+            params["cpus_per_task"] = min(
+                MAX_CPUS_PER_TASK, CPU_PER_GPU * gpus_per_node
+            )
+
+        if DISABLE_MEM_DIRECTIVE:
+            params.pop("mem_per_node", None)
+
     def _get_launch_params(self) -> dict[str, Any]:
         """Prepare launch parameters, set log dir, and validate required fields.
 
@@ -355,13 +373,17 @@ class ModelLauncher:
         # Override config defaults with CLI arguments
         self._apply_cli_overrides(params)
 
+        # Expand vars/user home in work_dir (SBATCH directives don't expand $USER)
+        if params.get("work_dir"):
+            params["work_dir"] = os.path.expanduser(
+                os.path.expandvars(str(params["work_dir"]))
+            )
+
+        # Apply cluster-specific resource policy overrides, when configured.
+        self._apply_cluster_policies(params)
+
         # Check for required fields without default vals, will raise an error if missing
         utils.check_required_fields(params)
-
-        if not params.get("work_dir"):
-            # This is last resort, work dir should always be a required field to avoid
-            # blowing up user home directory unless intended
-            params["work_dir"] = str(Path.home())
 
         # Validate resource allocation and parallelization settings
         self._validate_resource_allocation(params)
@@ -396,6 +418,24 @@ class ModelLauncher:
         self.slurm_script_path = SlurmScriptGenerator(self.params).write_to_log_dir()
         return f"sbatch {self.slurm_script_path}"
 
+    def preview_launch(self) -> dict[str, Any]:
+        """Preview resolved launch config and generated sbatch script.
+
+        Returns
+        -------
+        dict[str, Any]
+            Dictionary containing:
+            - model_name: Name of the model
+            - config: Fully resolved launch configuration
+            - sbatch_script: Generated sbatch script content
+        """
+        sbatch_script = SlurmScriptGenerator(self.params)._generate_script_content()
+        return {
+            "model_name": self.model_name,
+            "config": self.params,
+            "sbatch_script": sbatch_script,
+        }
+
     def launch(self) -> LaunchResponse:
         """Launch the model.
 
@@ -409,18 +449,24 @@ class ModelLauncher:
         SlurmJobError
             If SLURM job submission fails
         """
-        # Create cache directory if it doesn't exist
-        cache_dir = Path(self.params["work_dir"], ".vec-inf-cache").expanduser()
-        cache_dir.mkdir(parents=True, exist_ok=True)
-
         # Build and execute the launch command
         command_output, stderr = utils.run_bash_command(self._build_launch_command())
 
-        if stderr:
-            raise SlurmJobError(f"Error: {stderr}")
+        job_id = utils.extract_sbatch_job_id(command_output)
+        if not job_id:
+            if stderr:
+                raise SlurmJobError(f"Error: {stderr}")
+            raise SlurmJobError(
+                f"Error: Could not parse SLURM job id from sbatch output: {command_output!r}"
+            )
 
-        # Extract slurm job id from command output
-        self.slurm_job_id = command_output.split(" ")[-1].strip().strip("\n")
+        if stderr:
+            self._warn(
+                "sbatch returned stderr but job appears submitted. "
+                f"Continuing with job_id={job_id}. Stderr: {stderr}"
+            )
+
+        self.slurm_job_id = job_id
         self.params["slurm_job_id"] = self.slurm_job_id
 
         # Create log directory and job json file, move slurm script to job log directory
@@ -441,7 +487,9 @@ class ModelLauncher:
 
         # Replace venv with image path if using container
         if self.params["venv"] == CONTAINER_MODULE_NAME:
-            self.params["venv"] = IMAGE_PATH[self.params["engine"]]
+            self.params["venv"] = (
+                self.params.get("image_path") or IMAGE_PATH[self.params["engine"]]
+            )
 
         with job_json.open("w") as file:
             json.dump(self.params, file, indent=4)
@@ -546,7 +594,6 @@ class BatchModelLauncher:
         MissingRequiredFieldsError
             If tensor parallel size is not specified when using multiple GPUs
         ValueError
-            If total # of GPUs requested is not a power of two
             If mismatch between total # of GPUs requested and parallelization settings
         """
         if (
@@ -670,10 +717,12 @@ class BatchModelLauncher:
                 else:
                     params["models"][model_name][arg] = value
 
-        if not params.get("work_dir"):
-            # This is last resort, work dir should always be a required field to avoid
-            # blowing up user home directory unless intended
-            params["work_dir"] = str(Path.home())
+        # Expand vars/user home in work_dir (SBATCH directives don't expand $USER).
+        if params.get("work_dir"):
+            params["work_dir"] = os.path.expanduser(
+                os.path.expandvars(str(params["work_dir"]))
+            )
+
         return params
 
     def _build_launch_command(self) -> str:
@@ -702,8 +751,11 @@ class BatchModelLauncher:
         SlurmJobError
             If SLURM job submission fails
         """
+        work_dir = os.path.expanduser(os.path.expandvars(str(self.params["work_dir"])))
+        self.params["work_dir"] = work_dir
+
         # Create cache directory if it doesn't exist
-        cache_dir = Path(self.params["work_dir"], ".vec-inf-cache").expanduser()
+        cache_dir = Path(work_dir, ".vec-inf-cache")
         cache_dir.mkdir(parents=True, exist_ok=True)
 
         # Build and execute the launch command

@@ -1,0 +1,48 @@
+paths:
+  # The setup wizard populates these through scripts/.launch.env. They still
+  # accept direct edits when you want to bypass the wizard.
+  image_path: "${VEC_INF_VLLM_IMAGE_PATH:-/gpfs/scratch/bsc70/hpai/storage/users/$VEC_INF_STORAGE_USER/singularity/vllm_$VEC_INF_STORAGE_USER.sif}"
+  vllm_image_path: "${VEC_INF_VLLM_IMAGE_PATH:-/gpfs/scratch/bsc70/hpai/storage/users/$VEC_INF_STORAGE_USER/singularity/vllm_$VEC_INF_STORAGE_USER.sif}"
+  sglang_image_path: "${VEC_INF_VLLM_IMAGE_PATH:-/gpfs/scratch/bsc70/hpai/storage/users/$VEC_INF_STORAGE_USER/singularity/vllm_$VEC_INF_STORAGE_USER.sif}"
+  cached_model_config_path: "${VEC_INF_CACHED_MODEL_CONFIG_PATH:-/path/to/vec-inf-shared/models.yaml}"
+
+containerization:
+  module_load_cmd: "module load singularity"
+  module_name: "singularity"
+  cuda_compat_shim_default: true
+
+limits:
+  max_gpus_per_node: 4
+  max_num_nodes: 16
+  max_cpus_per_task: 80
+cpu_per_gpu: 20
+disable_mem_directive: true
+
+allowed_values:
+  qos: []
+  partition: []
+  resource_type: []
+
+required_args:
+  account: "VEC_INF_ACCOUNT"
+  work_dir: "VEC_INF_WORK_DIR"
+
+python_version: "python3.12"
+
+model_types: ["LLM", "VLM", "Text_Embedding", "Reward_Modeling", "OCR"]
+
+default_args:
+  cpus_per_task: "20"
+  time: "02:00:00"
+  qos: "acc_debug"
+  partition: ""
+  resource_type: ""
+  exclude: ""
+  nodelist: ""
+  bind: ""
+  venv: "singularity"
+  data_type: "auto"
+  log_dir: "~/.vec-inf-logs"
+  # Parent directory that contains model folders such as Qwen3.5-27B/.
+  model_weights_parent_dir: "${VEC_INF_MODEL_WEIGHTS_PARENT_DIR:-/gpfs/scratch/bsc70/hpai/storage/projects/heka/models}"
+  work_dir: "/home/bsc/$USER/vec-inf-work"

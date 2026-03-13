@@ -154,6 +154,30 @@ class VecInfClient:
         model_launcher = ModelLauncher(model_name, options_dict)
         return model_launcher.launch()
 
+    def preview_launch_model(
+        self, model_name: str, options: Optional[LaunchOptions] = None
+    ) -> dict[str, Any]:
+        """Preview launch config and generated sbatch script without submitting.
+
+        Parameters
+        ----------
+        model_name : str
+            Name of the model to preview
+        options : LaunchOptions, optional
+            Launch options to override default configuration
+
+        Returns
+        -------
+        dict[str, Any]
+            Dictionary with `model_name`, resolved `config`, and `sbatch_script`.
+        """
+        options_dict: dict[str, Any] = {}
+        if options:
+            options_dict = {k: v for k, v in vars(options).items() if v is not None}
+
+        model_launcher = ModelLauncher(model_name, options_dict)
+        return model_launcher.preview_launch()
+
     def batch_launch_models(
         self,
         model_names: list[str],

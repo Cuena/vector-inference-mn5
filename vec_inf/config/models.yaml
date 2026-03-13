@@ -845,6 +845,17 @@ models:
       --tensor-parallel-size: 2
     sglang_args:
       --tensor-parallel-size: 2
+  Qwen3.5-27B:
+    model_family: Qwen3.5
+    model_variant: 27B
+    model_type: LLM
+    gpus_per_node: 8
+    num_nodes: 1
+    vocab_size: 248320
+    vllm_args:
+      --tensor-parallel-size: 8
+      --max-model-len: 262144
+      --reasoning-parser: qwen3
   gpt-oss-120b:
     model_family: gpt-oss
     model_variant: 120b

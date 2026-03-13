@@ -95,6 +95,26 @@ def test_launch_model(mock_model_config, mock_launch_output):
         assert result.model_name == "test-model"
 
 
+def test_preview_launch_model():
+    """Test preview_launch_model returns resolved config and script."""
+    client = VecInfClient()
+
+    with patch("vec_inf.client.api.ModelLauncher") as mock_launcher_class:
+        mock_launcher = MagicMock()
+        mock_launcher.preview_launch.return_value = {
+            "model_name": "test-model",
+            "config": {"model_name": "test-model", "env": {"CACHE_DIR": "/cache"}},
+            "sbatch_script": "#!/bin/bash\n#SBATCH --job-name=test-model-vec-inf\n",
+        }
+        mock_launcher_class.return_value = mock_launcher
+
+        result = client.preview_launch_model("test-model")
+
+        assert result["model_name"] == "test-model"
+        assert "config" in result
+        assert result["sbatch_script"].startswith("#!/bin/bash")
+
+
 def test_get_status(mock_status_output):
     """Test getting the status of a model."""
     client = VecInfClient()

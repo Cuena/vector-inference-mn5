@@ -28,6 +28,9 @@ class TestVecInfImports(unittest.TestCase):
             import vec_inf.client.api  # noqa: PLC0415
             import vec_inf.client.config  # noqa: PLC0415
             import vec_inf.client.models  # noqa: F401, PLC0415
+            from vec_inf import mn5_setup_wizard  # noqa: PLC0415
+
+            assert mn5_setup_wizard is not None
 
         except ImportError as e:
             pytest.fail(f"Import failed: {e}")

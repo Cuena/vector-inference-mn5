@@ -4,29 +4,114 @@
 
 [![PyPI](https://img.shields.io/pypi/v/vec-inf)](https://pypi.org/project/vec-inf)
 [![downloads](https://img.shields.io/pypi/dm/vec-inf)](https://pypistats.org/packages/vec-inf)
-[![code checks](https://github.com/VectorInstitute/vector-inference/actions/workflows/code_checks.yml/badge.svg)](https://github.com/VectorInstitute/vector-inference/actions/workflows/code_checks.yml)
-[![docs](https://github.com/VectorInstitute/vector-inference/actions/workflows/docs.yml/badge.svg)](https://github.com/VectorInstitute/vector-inference/actions/workflows/docs.yml)
-[![codecov](https://codecov.io/github/VectorInstitute/vector-inference/branch/main/graph/badge.svg?token=NI88QSIGAC)](https://app.codecov.io/github/VectorInstitute/vector-inference/tree/main)
 [![vLLM](https://img.shields.io/badge/vLLM-0.15.0-blue)](https://docs.vllm.ai/en/v0.15.0/)
-[![SGLang](https://img.shields.io/badge/SGLang-0.5.8-blue)](https://docs.sglang.io/index.html)
-![GitHub License](https://img.shields.io/github/license/VectorInstitute/vector-inference)
 
 This repository provides an easy-to-use solution to run inference servers on [Slurm](https://slurm.schedmd.com/overview.html)-managed computing clusters using open-source inference engines ([vLLM](https://docs.vllm.ai/en/v0.15.0/), [SGLang](https://docs.sglang.io/index.html)). **This package runs natively on the Vector Institute cluster environments**. To adapt to other environments, follow the instructions in [Installation](#installation).
 
 **NOTE**: Supported models on Killarney are tracked [here](./MODEL_TRACKING.md)
 
+## MareNostrum5 setup
+
+This repository includes MN5-ready helper scripts, a public MN5 profile, and a setup wizard that writes the launcher config for you.
+
+### Recommended first run
+
+1. Clone and enter the repository:
+
+```bash
+git clone git@github.com:Cuena/vector-inference-mn5.git vector-inference-public
+cd vector-inference-public
+```
+
+2. Run the wizard:
+
+```bash
+uv run vec-inf-mn5-wizard
+```
+
+The wizard uses `rich`, explains each setting, writes [`scripts/.launch.env`](scripts/.launch.env.example) for you, and pre-fills team-oriented defaults for the vLLM path such as:
+- the remote checkout under `/home/bsc/<REMOTE_USER>/repos/<repo-name>`
+- the remote `vec-inf` virtualenv at `${RSYNC_DEST}/.venv`
+- the bundled MN5 config dir at `${RSYNC_DEST}/vec_inf/config/marenostrum5`
+- the current team weights root `/gpfs/scratch/bsc70/hpai/storage/projects/heka/models`
+- a lightweight smoke-test model: `Llama-3.2-3B-Instruct`
+
+Before running anything, the wizard shows the exact command line and the expected side effects. After writing the config, it can optionally:
+- run [`./scripts/first_time_setup.sh`](scripts/first_time_setup.sh)
+- launch `Llama-3.2-3B-Instruct` through [`./scripts/launch_and_tunnel.sh`](scripts/launch_and_tunnel.sh)
+
+3. If you skip the optional launch, you can run it later:
+
+```bash
+./scripts/launch_and_tunnel.sh Llama-3.2-3B-Instruct 5678
+```
+
+4. Use the local endpoint:
+
+```text
+http://localhost:5678/v1
+```
+
+### Manual fallback
+
+If you prefer to edit files yourself instead of using the wizard:
+
+```bash
+cp scripts/.launch.env.example scripts/.launch.env
+```
+
+The important fields are:
+- `REMOTE_USER`: your BSC login username.
+- `RSYNC_DEST`: remote checkout location on MN5.
+- `VEC_INF_ENV`: remote Python environment used for `vec-inf launch`.
+- `VEC_INF_CONFIG_DIR_REMOTE`: remote MN5 config directory.
+- `REMOTE_WORK_DIR`: working directory passed to Slurm jobs.
+- `REMOTE_ACCOUNT`: Slurm account.
+- `VEC_INF_VLLM_IMAGE_PATH`: default vLLM image used by the MN5 profile.
+- `VEC_INF_MODEL_WEIGHTS_PARENT_DIR`: parent directory containing model weights.
+- `VEC_INF_STORAGE_USER`: only if your config templates explicitly use `$VEC_INF_STORAGE_USER`.
+
+The tracked MN5 profile in [`vec_inf/config/marenostrum5/environment.yaml`](vec_inf/config/marenostrum5/environment.yaml) now reads those path values from `.launch.env`, so most users do not need to edit the YAML directly. This onboarding flow configures vLLM only. You only need to touch [`vec_inf/config/marenostrum5/models.yaml`](vec_inf/config/marenostrum5/models.yaml) when a specific model should use a different image or runtime override.
+
+### Why explicit paths matter
+
+If `RSYNC_DEST`, `VEC_INF_ENV`, or `REMOTE_WORK_DIR` are left empty, scripts fall back to default locations and may reuse older data or environments. Keeping them explicit avoids surprising reuse of stale remote checkouts.
+
+See [`docs/marenostrum5.md`](docs/marenostrum5.md) for full details.
+
 ## Installation
-If you are using the Vector cluster environment, and you don't need any customization to the inference server environment, run the following to install package:
+Choose the installation workflow that matches how you plan to run `vec-inf`:
+
+If you are onboarding to the repo-backed MN5 workflow, use the wizard from this checkout:
+
+```bash
+uv run vec-inf-mn5-wizard
+```
+
+If you only need the published package/CLI, install from PyPI:
 
 ```bash
 pip install vec-inf
 ```
-Otherwise, we recommend using the provided [`vllm.Dockerfile`](vllm.Dockerfile) and [`sglang.Dockerfile`](sglang.Dockerfile) to set up your own environment with the package. The built images are available through [Docker Hub](https://hub.docker.com/orgs/vectorinstitute/repositories)
 
-If you'd like to use `vec-inf` on your own Slurm cluster, you would need to update the configuration files, there are 3 ways to do it:
-* Clone the repository and update the `environment.yaml` and the `models.yaml` file in [`vec_inf/config`](vec_inf/config/), then install from source by running `pip install .`.
+If you are working from this repo checkout or using the MN5 helper scripts, create the managed project environment:
+
+```bash
+uv sync --frozen
+```
+
+If you need a local backend environment instead of container images, install the vLLM backend plus the shared inference dependencies:
+
+```bash
+uv sync --group inference --extra vllm
+```
+
+We also provide [`vllm.Dockerfile`](vllm.Dockerfile) for container-based deployments.
+
+If you'd like to use `vec-inf` on your own Slurm cluster, there are 3 configuration paths:
+* Clone the repository and update the `environment.yaml` and `models.yaml` files in [`vec_inf/config`](vec_inf/config/). For a source checkout, prefer `uv sync` over `pip install .` so backend-specific dependency groups remain available.
 * The package would try to look for cached configuration files in your environment before using the default configuration. The default cached configuration directory path points to `/model-weights/vec-inf-shared`, you would need to create an `environment.yaml` and a `models.yaml` following the format of these files in [`vec_inf/config`](vec_inf/config/).
-* [OPTIONAL] The package could also look for an enviroment variable `VEC_INF_CONFIG_DIR`. You can put your `environment.yaml` and `models.yaml` in a directory of your choice and set the enviroment variable `VEC_INF_CONFIG_DIR` to point to that location.
+* [OPTIONAL] The package can also look for an environment variable `VEC_INF_CONFIG_DIR`. You can put your `environment.yaml` and `models.yaml` in a directory of your choice and set `VEC_INF_CONFIG_DIR` to point to that location.
 
 ## Usage
 
@@ -47,9 +132,9 @@ You should see an output like the following:
 
 **NOTE**: You can set the required fields in the environment configuration (`environment.yaml`), it's a mapping between required arguments and their corresponding environment variables. On the Vector **Killarney** Cluster environment, the required fields are:
   * `--account`, `-A`: The Slurm account, this argument can be set to default by setting environment variable `VEC_INF_ACCOUNT`.
-  * `--work-dir`, `-D`: A working directory other than your home directory, this argument can be set to default by seeting environment variable `VEC_INF_WORK_DIR`.
+  * `--work-dir`, `-D`: A working directory other than your home directory, this argument can be set to default by setting environment variable `VEC_INF_WORK_DIR`.
 
-Models that are already supported by `vec-inf` would be launched using the cached configuration (set in [slurm_vars.py](vec_inf/client/slurm_vars.py)) or [default configuration](vec_inf/config/models.yaml). You can override these values by providing additional parameters. Use `vec-inf launch --help` to see the full list of parameters that can be overriden. You can also launch your own custom model as long as the model architecture is supported by the underlying inference engine. For detailed instructions on how to customize your model launch, check out the [`launch` command section in User Guide](https://vectorinstitute.github.io/vector-inference/latest/user_guide/#launch-command). During the launch process, relevant log files and scripts will be written to a log directory (default to `.vec-inf-logs` in your home directory), and a cache directory (`.vec-inf-cache`) will be created in your working directory (defaults to your home directory if not specified or required) for torch compile cache.
+Models that are already supported by `vec-inf` are launched from the cached configuration (set in [`_slurm_vars.py`](vec_inf/client/_slurm_vars.py)) or the [default configuration](vec_inf/config/models.yaml). You can override these values by providing additional parameters. Use `vec-inf launch --help` to see the full list of parameters that can be overridden. You can also launch your own custom model as long as the model architecture is supported by the underlying inference engine. For detailed instructions on how to customize your model launch, check out the [`launch` command section in User Guide](https://vectorinstitute.github.io/vector-inference/latest/user_guide/#launch-command). During the launch process, relevant log files and scripts are written to a log directory (default `.vec-inf-logs` in your home directory), and a cache directory (`.vec-inf-cache`) is created in your working directory (defaults to your home directory if not specified or required) for torch compile cache.
 
 #### Other commands
 
@@ -143,6 +228,6 @@ If you found Vector Inference useful in your research or applications, please ci
   organization = {Vector Institute},
   year         = {<YEAR_OF_RELEASE>},
   version      = {<VERSION_TAG>},
-  url          = {https://github.com/VectorInstitute/vector-inference}
+  url          = {https://github.com/Cuena/vector-inference-mn5}
 }
 ```

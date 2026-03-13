@@ -12,6 +12,7 @@ dependencies = [
     "rich>=13.7.0",
     "pydantic>=2.10.6",
     "pyyaml>=6.0.2",
+    "textual>=7.5.0",
 ]
 
 [dependency-groups]
@@ -78,6 +79,7 @@ conflicts = [
 
 [project.scripts]
 vec-inf = "vec_inf.cli._cli:cli"
+vec-inf-mn5-wizard = "vec_inf.mn5_setup_wizard:main"
 
 [build-system]
 requires = ["hatchling"]
