@@ -4,13 +4,81 @@
 from __future__ import annotations
 
 import os
+import shlex
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import MutableMapping, Optional
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+REPO_ROOT = SCRIPT_DIR.parents[0]
+LAUNCH_ENV_PATH = SCRIPT_DIR / ".launch.env"
+DEFAULT_MODEL_NAME = "Llama-3.2-3B-Instruct"
 
 DEFAULT_CONFIG_DIR = (
-    Path(__file__).resolve().parents[1] / "vec_inf" / "config" / "marenostrum5"
+    REPO_ROOT / "vec_inf" / "config" / "marenostrum5"
 )
+
+
+def parse_launch_env(path: Path) -> dict[str, str]:
+    """Parse a simple KEY=VALUE launch env file."""
+    if not path.exists():
+        return {}
+
+    values: dict[str, str] = {}
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, raw_value = line.split("=", 1)
+        key = key.strip()
+        raw_value = raw_value.strip()
+        if raw_value == "":
+            values[key] = ""
+            continue
+        try:
+            tokens = shlex.split(raw_value, posix=True)
+        except ValueError:
+            values[key] = raw_value.strip("\"'")
+            continue
+        values[key] = tokens[0] if len(tokens) == 1 else " ".join(tokens)
+    return values
+
+
+def derive_project_root(values: MutableMapping[str, str]) -> str:
+    """Infer the remote project root from launch settings."""
+    explicit = values.get("VEC_INF_PROJECT_ROOT", "").strip()
+    if explicit:
+        return explicit
+    config_dir_remote = values.get("VEC_INF_CONFIG_DIR_REMOTE", "").strip()
+    suffix = "/vec_inf/config/marenostrum5"
+    if config_dir_remote.endswith(suffix):
+        return config_dir_remote[: -len(suffix)]
+    return values.get("RSYNC_DEST", "").strip()
+
+
+def apply_launch_env_defaults(
+    values: dict[str, str],
+    environ: MutableMapping[str, str] | None = None,
+) -> None:
+    """Apply launch env values as defaults without overriding explicit shell env."""
+    target = environ if environ is not None else os.environ
+    for key, value in values.items():
+        target.setdefault(key, value)
+    project_root = derive_project_root(target)
+    if project_root:
+        target.setdefault("VEC_INF_PROJECT_ROOT", project_root)
+
+
+def resolve_preferred_model_name(last_launched_model: str | None) -> str:
+    """Pick the preferred default model for initial TUI selection."""
+    if last_launched_model:
+        return last_launched_model
+    return DEFAULT_MODEL_NAME
+
+
+_launch_env_values = parse_launch_env(LAUNCH_ENV_PATH)
+apply_launch_env_defaults(_launch_env_values)
+
 if "VEC_INF_CONFIG_DIR" not in os.environ and DEFAULT_CONFIG_DIR.exists():
     os.environ["VEC_INF_CONFIG_DIR"] = str(DEFAULT_CONFIG_DIR)
 
@@ -372,7 +440,9 @@ class LaunchTui(App[Optional[LaunchRequest]]):
         self._sync_layout()
         self.load_models()
         self._last_launched_model = load_last_launched_model()
-        self.populate_list(preferred_model=self._last_launched_model)
+        self.populate_list(
+            preferred_model=resolve_preferred_model_name(self._last_launched_model)
+        )
         list_view = self.query_one(ListView)
         if hasattr(list_view, "show_vertical_scrollbar"):
             list_view.show_vertical_scrollbar = False
@@ -481,7 +551,9 @@ class LaunchTui(App[Optional[LaunchRequest]]):
 
     def action_reload(self) -> None:
         self.load_models()
-        self.populate_list(preferred_model=self._last_launched_model)
+        self.populate_list(
+            preferred_model=resolve_preferred_model_name(self._last_launched_model)
+        )
 
     def action_confirm(self) -> None:
         model = self.get_selected_model()
@@ -498,8 +570,7 @@ class LaunchTui(App[Optional[LaunchRequest]]):
 
 def build_status_line() -> str:
     config_hint = resolve_model_config_path()
-    env_path = Path(__file__).resolve().parent / ".launch.env"
-    env_status = "[green]found[/green]" if env_path.exists() else "[red]missing[/red]"
+    env_status = "[green]found[/green]" if LAUNCH_ENV_PATH.exists() else "[red]missing[/red]"
     return (
         f"[b]Config[/b]: {config_hint}  |  "
         f"[b]scripts/.launch.env[/b]: {env_status}  |  "
@@ -661,7 +732,7 @@ def _yaml_scalar(value: object) -> str:
 
 
 def run_launch(request: LaunchRequest) -> None:
-    script_path = Path(__file__).resolve().parent / "launch_and_tunnel.sh"
+    script_path = SCRIPT_DIR / "launch_and_tunnel.sh"
     if not script_path.exists():
         raise SystemExit(f"Launch script not found: {script_path}")
     if request.launch_only:

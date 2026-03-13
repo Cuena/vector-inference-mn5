@@ -28,13 +28,16 @@ REPO_PATH_PREFIX = "@repo/"
 
 def _repo_root() -> Path:
     """Return the repository root for repo-relative config assets."""
+    override = os.getenv("VEC_INF_PROJECT_ROOT", "").strip()
+    if override:
+        return Path(expand_path_placeholders(override))
     return Path(__file__).resolve().parents[2]
 
 
 def _resolve_special_path_tokens(value: str) -> str:
     """Resolve repo-relative tokens and simple env placeholders."""
     if value.startswith(REPO_PATH_PREFIX):
-        return str((_repo_root() / value.removeprefix(REPO_PATH_PREFIX)).resolve())
+        return str(_repo_root() / value.removeprefix(REPO_PATH_PREFIX))
     if "$" in value or "~" in value:
         return expand_path_placeholders(value)
     return value

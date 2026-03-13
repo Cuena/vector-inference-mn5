@@ -191,6 +191,18 @@ VEC_INF_STORAGE_USER="${VEC_INF_STORAGE_USER:-$REMOTE_USER}"
 
 # Shared project root used by the public MN5 environment profile.
 VEC_INF_PROJECT_ROOT="${VEC_INF_PROJECT_ROOT:-}"
+if [ -z "${VEC_INF_PROJECT_ROOT}" ]; then
+    case "${VEC_INF_CONFIG_DIR_REMOTE:-}" in
+        */vec_inf/config/marenostrum5)
+            VEC_INF_PROJECT_ROOT="${VEC_INF_CONFIG_DIR_REMOTE%/vec_inf/config/marenostrum5}"
+            ;;
+        *)
+            if [ -n "${RSYNC_DEST:-}" ]; then
+                VEC_INF_PROJECT_ROOT="${RSYNC_DEST}"
+            fi
+            ;;
+    esac
+fi
 
 # MODEL_NAME: use command-line argument if provided, otherwise from .launch.env
 if [ -n "${1:-}" ]; then

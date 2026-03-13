@@ -9,7 +9,7 @@ paths:
 containerization:
   module_load_cmd: "module load singularity"
   module_name: "singularity"
-  cuda_compat_shim_default: true
+  cuda_compat_shim_default: false
 
 limits:
   max_gpus_per_node: 4

@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from rich.console import Console
+from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
 from rich.table import Table
 
@@ -220,11 +221,6 @@ def build_summary_table(config: WizardConfig) -> Table:
     return table
 
 
-def _format_command(*parts: str) -> str:
-    """Format a shell command preview."""
-    return shlex.join(parts)
-
-
 def build_effects_table(config: WizardConfig) -> Table:
     """Show exactly what the wizard will write before confirmation."""
     table = Table(title="File Effects", show_header=True, box=None, pad_edge=False)
@@ -240,38 +236,61 @@ def build_effects_table(config: WizardConfig) -> Table:
     return table
 
 
-def build_command_plan(
-    config: WizardConfig,
-    include_setup: bool,
-    include_launch: bool,
-) -> Table:
-    """Show exact commands and their effects before execution."""
-    table = Table(title="Commands To Run", show_header=True, box=None, pad_edge=False)
-    table.add_column("Command", style="bold cyan")
-    table.add_column("Effect")
-    if include_setup:
-        table.add_row(
-            _format_command("./scripts/first_time_setup.sh"),
-            (
-                "Locally invokes ssh/rsync, creates or updates the remote checkout at "
-                f"{config.rsync_dest}, then runs `uv sync` remotely to build "
-                f"{config.vec_inf_env}."
-            ),
+def describe_setup_effects(config: WizardConfig) -> str:
+    """Describe exactly what first_time_setup.sh will do."""
+    return (
+        "This will:\n"
+        f"- create or reuse the remote checkout directory `{config.rsync_dest}`\n"
+        f"- sync this local repo to `{config.remote_user}@{config.remote_transfer_host}:{config.rsync_dest}`\n"
+        f"- connect to `{config.remote_internet_host}` and run `uv sync {config.uv_sync_args}` in that checkout\n"
+        f"- create or update the remote environment at `{config.vec_inf_env}`\n"
+        "Use `./scripts/first_time_setup.sh --dry-run` if you want a no-write preview."
+    )
+
+
+def describe_launch_effects(config: WizardConfig) -> str:
+    """Describe exactly what launch_and_tunnel.sh will do."""
+    return (
+        "This will:\n"
+        f"- submit a vec-inf launch for `{config.model_name}` via `{config.remote_launch_host}`\n"
+        f"- use the MN5 config from `{config.vec_inf_config_dir_remote}`\n"
+        f"- wait for the server to become ready\n"
+        f"- open a local SSH tunnel on port `{config.local_port}` if launch succeeds"
+    )
+
+
+def preview_setup_execution(console: Console, config: WizardConfig) -> None:
+    """Show the setup script preview before asking for final confirmation."""
+    console.print()
+    console.print(
+        Panel.fit(
+            describe_setup_effects(config),
+            title="What first_time_setup.sh does",
+            border_style="cyan",
         )
-    if include_launch:
-        table.add_row(
-            _format_command(
-                "./scripts/launch_and_tunnel.sh",
-                config.model_name,
-                config.local_port,
-            ),
-            (
-                f"Optionally rsyncs the repo first, submits a vec-inf vLLM launch for "
-                f"{config.model_name}, waits for readiness, and opens a local SSH "
-                f"tunnel on port {config.local_port}."
-            ),
+    )
+
+
+def preview_launch_execution(console: Console, config: WizardConfig) -> None:
+    """Show the launch script preview before asking for final confirmation."""
+    console.print()
+    console.print(
+        Panel.fit(
+            describe_launch_effects(config),
+            title="What launch_and_tunnel.sh does",
+            border_style="cyan",
         )
-    return table
+    )
+
+
+def build_setup_run_prompt() -> str:
+    """Return the setup execution confirmation prompt."""
+    return "Run first_time_setup.sh now?"
+
+
+def build_launch_run_prompt(model_name: str) -> str:
+    """Return the launch execution confirmation prompt."""
+    return f"Launch the smoke-test model `{model_name}` now?"
 
 
 def ensure_local_commands(console: Console, command_names: list[str]) -> bool:
@@ -514,27 +533,9 @@ def main() -> int:
             f"{BACKUP_ENV_PATH.relative_to(REPO_ROOT)}.[/dim]"
         )
 
-    run_setup = Confirm.ask(
-        "Run first_time_setup.sh now (sync repo + create remote .venv)?",
-        default=True,
-        console=console,
-    )
+    preview_setup_execution(console, config)
+    run_setup = Confirm.ask(build_setup_run_prompt(), default=True, console=console)
     setup_ok = True
-    if run_setup:
-        console.print()
-        console.print(build_command_plan(config, include_setup=True, include_launch=False))
-        console.print()
-        if not Confirm.ask(
-            "Run this command exactly as shown?",
-            default=True,
-            console=console,
-        ):
-            run_setup = False
-        else:
-            console.print(
-                "[dim]Effect: this will create/update the remote checkout and remote "
-                "virtual environment.[/dim]"
-            )
     if run_setup:
         if ensure_local_commands(console, ["ssh", "rsync"]):
             setup_ok = (
@@ -543,26 +544,14 @@ def main() -> int:
         else:
             setup_ok = False
 
-    run_launch = setup_ok and Confirm.ask(
-        f"Launch the lightweight smoke-test model `{config.model_name}` now?",
-        default=False,
-        console=console,
-    )
-    if run_launch:
-        console.print()
-        console.print(build_command_plan(config, include_setup=False, include_launch=True))
-        console.print()
-        if not Confirm.ask(
-            "Run this command exactly as shown?",
-            default=True,
+    run_launch = False
+    if setup_ok:
+        preview_launch_execution(console, config)
+        run_launch = Confirm.ask(
+            build_launch_run_prompt(config.model_name),
+            default=False,
             console=console,
-        ):
-            run_launch = False
-        else:
-            console.print(
-                "[dim]Effect: this will submit a remote Slurm job and, if it becomes "
-                "ready, open a local SSH tunnel.[/dim]"
-            )
+        )
     if run_launch and ensure_local_commands(console, ["ssh", "rsync"]):
         run_helper_script(
             console,

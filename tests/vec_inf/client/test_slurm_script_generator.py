@@ -16,6 +16,10 @@ from vec_inf.client._slurm_vars import CONTAINER_MODULE_NAME, CUDA_COMPAT_SHIM_D
 class TestSlurmScriptGenerator:
     """Tests for SlurmScriptGenerator class."""
 
+    def test_mn5_cuda_compat_shim_default_is_disabled(self):
+        """MN5 should not inject the CUDA compat shim unless a model opts in."""
+        assert CUDA_COMPAT_SHIM_DEFAULT is False
+
     @pytest.fixture
     def basic_params(self):
         """Generate basic SLURM configuration parameters."""

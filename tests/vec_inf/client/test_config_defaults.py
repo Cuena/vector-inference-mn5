@@ -84,3 +84,23 @@ def test_model_config_resolves_repo_relative_engine_args() -> None:
     assert config_path is not None
     assert Path(config_path).name == "generic.yaml"
     assert Path(config_path).exists()
+
+
+def test_model_config_uses_vec_inf_project_root_for_repo_relative_engine_args(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Repo-relative engine args should honor VEC_INF_PROJECT_ROOT verbatim."""
+    monkeypatch.setenv("VEC_INF_PROJECT_ROOT", "/home/bsc/alice/repos/vector-inference-mn5")
+
+    cfg = ModelConfig(
+        model_name="test-model",
+        model_family="test-family",
+        model_type="LLM",
+        num_nodes=1,
+        gpus_per_node=1,
+        vocab_size=32000,
+        vllm_args={"--config": "@repo/compilation_configs/generic.yaml"},
+    )
+
+    config_path = cfg.vllm_args["--config"] if cfg.vllm_args else None
+    assert config_path == "/home/bsc/alice/repos/vector-inference-mn5/compilation_configs/generic.yaml"

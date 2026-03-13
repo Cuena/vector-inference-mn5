@@ -75,6 +75,11 @@ models:
     num_nodes: 1
     gpus_per_node: 1
     vocab_size: 128256
+    vllm_args:
+      --max-model-len: 16384
+      --tensor-parallel-size: 1
+      --gpu-memory-utilization: 0.7
+
   Kimi-K2-Thinking:
     model_family: Kimi
     model_variant: K2-Thinking
