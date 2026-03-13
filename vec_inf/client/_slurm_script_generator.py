@@ -14,7 +14,11 @@ from vec_inf.client._slurm_templates import (
     BATCH_SLURM_SCRIPT_TEMPLATE,
     SLURM_SCRIPT_TEMPLATE,
 )
-from vec_inf.client._slurm_vars import CONTAINER_MODULE_NAME, IMAGE_PATH
+from vec_inf.client._slurm_vars import (
+    CONTAINER_MODULE_NAME,
+    CUDA_COMPAT_SHIM_DEFAULT,
+    IMAGE_PATH,
+)
 
 
 class SlurmScriptGenerator:
@@ -38,10 +42,61 @@ class SlurmScriptGenerator:
         self.additional_binds = (
             f",{self.params['bind']}" if self.params.get("bind") else ""
         )
+        raw_cuda_shim = self.params.get("cuda_compat_shim")
+        if raw_cuda_shim is None:
+            self.cuda_compat_shim_enabled = bool(CUDA_COMPAT_SHIM_DEFAULT)
+        else:
+            self.cuda_compat_shim_enabled = self._parse_bool(raw_cuda_shim)
+        self.cuda_compat_shim_source = str(
+            self.params.get("cuda_compat_shim_source")
+            or "/usr/local/cuda-12.9/compat/lib.real/libcuda.so.1"
+        )
+        model_weights_dir_name = str(
+            self.params.get("model_weights_dir_name") or self.params["model_name"]
+        )
         self.model_weights_path = str(
-            Path(self.params["model_weights_parent_dir"], self.params["model_name"])
+            Path(self.params["model_weights_parent_dir"], model_weights_dir_name)
         )
         self.env_str = self._generate_env_str()
+
+    @staticmethod
+    def _parse_bool(value: Any) -> bool:
+        if isinstance(value, bool):
+            return value
+        if value is None:
+            return False
+        if isinstance(value, int):
+            return bool(value)
+        return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
+
+    def _cuda_compat_shim_bind(self) -> str:
+        if not self.use_container or not self.cuda_compat_shim_enabled:
+            return ""
+        bind_value = str(self.params.get("bind") or "")
+        if ":/usr/local/cuda/compat/lib" in bind_value:
+            return ""
+        return ",$HOME/cuda_shim:/usr/local/cuda/compat/lib"
+
+    def _cuda_compat_shim_setup_lines(self) -> list[str]:
+        if not self.use_container or not self.cuda_compat_shim_enabled:
+            return []
+        return [
+            'mkdir -p "$HOME/cuda_shim"',
+            f'cuda_shim_src="{self.cuda_compat_shim_source}"',
+            'cp -f "$cuda_shim_src" "$HOME/cuda_shim/libcuda.so.1" || true',
+            'ln -sf libcuda.so.1 "$HOME/cuda_shim/libcuda.so" || true',
+        ]
+
+    def _container_env_reset_lines(self) -> list[str]:
+        if not self.use_container:
+            return []
+        return [
+            "unset LD_PRELOAD",
+            "unset SINGULARITYENV_LD_PRELOAD",
+            "unset APPTAINERENV_LD_PRELOAD",
+            "unset SINGULARITYENV_LD_LIBRARY_PATH",
+            "unset APPTAINERENV_LD_LIBRARY_PATH",
+        ]
 
     def _generate_env_str(self) -> str:
         """Generate the environment variables string for the Slurm script.
@@ -63,6 +118,32 @@ class SlurmScriptGenerator:
         # Format for shell: export KEY1=VAL1\nexport KEY2=VAL2
         export_lines = [f"export {key}={val}" for key, val in env_dict.items()]
         return "\n".join(export_lines)
+
+    def _unset_env_lines(self) -> list[str]:
+        """Generate shell `unset` commands for configured environment variables."""
+        raw_unset_vars = self.params.get("unset_env_vars")
+        if not raw_unset_vars:
+            return []
+
+        if isinstance(raw_unset_vars, str):
+            candidates = [raw_unset_vars]
+        elif isinstance(raw_unset_vars, list):
+            candidates = raw_unset_vars
+        else:
+            return []
+
+        unset_lines: list[str] = []
+        for candidate in candidates:
+            var_name = str(candidate).strip()
+            if not var_name:
+                continue
+            if var_name[0].isdigit():
+                continue
+            if not all(ch.isalnum() or ch == "_" for ch in var_name):
+                continue
+            unset_lines.append(f"unset {var_name}")
+
+        return unset_lines
 
     def _generate_script_content(self) -> str:
         """Generate the complete Slurm script content.
@@ -94,6 +175,21 @@ class SlurmScriptGenerator:
                 shebang[-1] += "-vec-inf"
         if self.is_multinode:
             shebang += SLURM_SCRIPT_TEMPLATE["shebang"]["multinode"]
+
+        # Provide sensible defaults for task layout, while still allowing overrides.
+        if (
+            self.is_multinode
+            and not self.params.get("ntasks")
+            and not self.params.get("ntasks_per_node")
+        ):
+            shebang.append("#SBATCH --ntasks-per-node=1")
+        elif (
+            not self.is_multinode
+            and not self.params.get("ntasks")
+            and not self.params.get("ntasks_per_node")
+        ):
+            shebang.append("#SBATCH --ntasks=1")
+
         return "\n".join(shebang)
 
     def _generate_server_setup(self) -> str:
@@ -108,19 +204,35 @@ class SlurmScriptGenerator:
             Server initialization script content.
         """
         server_script = ["\n"]
+        unset_env_lines = self._unset_env_lines()
+
         if self.use_container:
+            work_dir = str(self.params.get("work_dir", str(Path.home())))
             server_script.append("\n".join(SLURM_SCRIPT_TEMPLATE["container_setup"]))
+            cuda_shim_setup = self._cuda_compat_shim_setup_lines()
+            if cuda_shim_setup:
+                server_script.append("\n".join(cuda_shim_setup))
+            container_env_reset = self._container_env_reset_lines()
+            if container_env_reset:
+                server_script.append("\n".join(container_env_reset))
+            if unset_env_lines:
+                server_script.append("\n".join(unset_env_lines))
+            # Ensure bind source exists on each compute node before container launch.
+            server_script.append(f'mkdir -p "{work_dir}/.vec-inf-cache"')
             server_script.append(
                 SLURM_SCRIPT_TEMPLATE["bind_path"].format(
-                    work_dir=self.params.get("work_dir", str(Path.home())),
+                    work_dir=work_dir,
                     model_weights_path=self.model_weights_path,
                     additional_binds=self.additional_binds,
+                    cuda_compat_shim_bind=self._cuda_compat_shim_bind(),
                 )
             )
         else:
             server_script.append(
                 SLURM_SCRIPT_TEMPLATE["activate_venv"].format(venv=self.params["venv"])
             )
+            if unset_env_lines:
+                server_script.append("\n".join(unset_env_lines))
             server_script.append(self.env_str)
         server_script.append(
             SLURM_SCRIPT_TEMPLATE["imports"].format(src_dir=self.params["src_dir"])
@@ -131,11 +243,12 @@ class SlurmScriptGenerator:
                 SLURM_SCRIPT_TEMPLATE["server_setup"]["multinode_vllm"]
             ).format(gpus_per_node=self.params["gpus_per_node"])
             if self.use_container:
+                image_path = self.params.get("image_path") or IMAGE_PATH[self.engine]
                 server_setup_str = server_setup_str.replace(
                     "CONTAINER_PLACEHOLDER",
                     SLURM_SCRIPT_TEMPLATE["container_command"].format(
                         env_str=self.env_str,
-                        image_path=IMAGE_PATH[self.engine],
+                        image_path=image_path,
                     ),
                 )
             else:
@@ -176,10 +289,11 @@ class SlurmScriptGenerator:
 
         launch_cmd = ["\n"]
         if self.use_container:
+            image_path = self.params.get("image_path") or IMAGE_PATH[self.engine]
             launch_cmd.append(
                 SLURM_SCRIPT_TEMPLATE["container_command"].format(
                     env_str=self.env_str,
-                    image_path=IMAGE_PATH[self.engine],
+                    image_path=image_path,
                 )
             )
 
@@ -198,7 +312,10 @@ class SlurmScriptGenerator:
 
         # A known bug in vLLM requires setting backend to ray for multi-node
         # Remove this when the bug is fixed
-        if self.is_multinode:
+        if (
+            self.is_multinode
+            and "--distributed-executor-backend" not in self.params["engine_args"]
+        ):
             launch_cmd.append("    --distributed-executor-backend ray \\")
 
         return "\n".join(launch_cmd).rstrip(" \\")
@@ -279,10 +396,14 @@ class BatchSlurmScriptGenerator:
                 if self.params["models"][model_name].get("bind")
                 else ""
             )
+            model_weights_dir_name = str(
+                self.params["models"][model_name].get("model_weights_dir_name")
+                or model_name
+            )
             self.params["models"][model_name]["model_weights_path"] = str(
                 Path(
                     self.params["models"][model_name]["model_weights_parent_dir"],
-                    model_name,
+                    model_weights_dir_name,
                 )
             )
 
@@ -316,11 +437,14 @@ class BatchSlurmScriptGenerator:
         script_content = []
         model_params = self.params["models"][model_name]
         script_content.append(BATCH_MODEL_LAUNCH_SCRIPT_TEMPLATE["shebang"])
+        work_dir = str(self.params.get("work_dir", str(Path.home())))
         if self.use_container:
             script_content.append(BATCH_MODEL_LAUNCH_SCRIPT_TEMPLATE["container_setup"])
+            # Ensure bind source exists on each compute node before container launch.
+            script_content.append(f'mkdir -p "{work_dir}/.vec-inf-cache"')
         script_content.append(
             BATCH_MODEL_LAUNCH_SCRIPT_TEMPLATE["bind_path"].format(
-                work_dir=self.params.get("work_dir", str(Path.home())),
+                work_dir=work_dir,
                 model_weights_path=model_params["model_weights_path"],
                 additional_binds=model_params["additional_binds"],
             )

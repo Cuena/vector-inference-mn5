@@ -109,21 +109,19 @@ class SlurmScriptTemplate(TypedDict):
 SLURM_SCRIPT_TEMPLATE: SlurmScriptTemplate = {
     "shebang": {
         "base": "#!/bin/bash",
-        "multinode": [
-            "#SBATCH --ntasks-per-node=1",
-        ],
+        "multinode": [],
     },
     "container_setup": [
         CONTAINER_LOAD_CMD,
     ],
     "imports": "source {src_dir}/find_port.sh",
-    "bind_path": f"export {CONTAINER_MODULE_NAME_UPPER}_BINDPATH=${CONTAINER_MODULE_NAME_UPPER}_BINDPATH,/dev,/tmp,{{work_dir}}/.vec-inf-cache:$HOME/.cache,{{model_weights_path}}{{additional_binds}}",
-    "container_command": f"{CONTAINER_MODULE_NAME} exec --nv {{env_str}} --containall {{image_path}} \\",
+    "bind_path": f"export {CONTAINER_MODULE_NAME_UPPER}_BINDPATH=${CONTAINER_MODULE_NAME_UPPER}_BINDPATH{{cuda_compat_shim_bind}},/dev,/tmp,{{work_dir}},{{work_dir}}/.vec-inf-cache:$HOME/.cache,{{model_weights_path}}{{additional_binds}}",
+    "container_command": f"{CONTAINER_MODULE_NAME} exec --nv --cleanenv {{env_str}} --containall {{image_path}} \\",
     "activate_venv": "source {venv}/bin/activate",
     "server_setup": {
         "single_node": [
             "\n# Find available port",
-            "head_node=${SLURMD_NODENAME}",
+            "head_node_ip=$(hostname --ip-address)",
         ],
         "multinode_vllm": [
             "\n# Get list of nodes",
@@ -131,6 +129,13 @@ SLURM_SCRIPT_TEMPLATE: SlurmScriptTemplate = {
             "nodes_array=($nodes)",
             "head_node=${{nodes_array[0]}}",
             'head_node_ip=$(srun --nodes=1 --ntasks=1 -w "$head_node" hostname --ip-address)',
+            "export VLLM_HOST_IP=$head_node_ip",
+            "export HOST_IP=$head_node_ip",
+            # Ensure these env vars are visible inside container runs too.
+            "export SINGULARITYENV_VLLM_HOST_IP=$head_node_ip",
+            "export SINGULARITYENV_HOST_IP=$head_node_ip",
+            "export APPTAINERENV_VLLM_HOST_IP=$head_node_ip",
+            "export APPTAINERENV_HOST_IP=$head_node_ip",
             "\n# Check for RDMA devices and set environment variable accordingly",
             "if ! command -v ibv_devices >/dev/null 2>&1; then",
             '   echo "ibv_devices not found; forcing TCP. (No RDMA userland on host?)"',
@@ -140,33 +145,39 @@ SLURM_SCRIPT_TEMPLATE: SlurmScriptTemplate = {
             "   # Pick GID index based on link layer (IB vs RoCE)",
             '   if ibv_devinfo 2>/dev/null | grep -q "link_layer:.*Ethernet"; then',
             "       # RoCEv2 typically needs a nonzero GID index; 3 is common, try 2 if your fabric uses it",
-            "       export NCCL_IB_GID_INDEX={{NCCL_IB_GID_INDEX:-3}}",
-            '       export NCCL_ENV_ARG="--env NCCL_IB_GID_INDEX={{NCCL_IB_GID_INDEX:-3}}"',
+            "       export NCCL_IB_GID_INDEX=${{NCCL_IB_GID_INDEX:-3}}",
+            '       export NCCL_ENV_ARG="--env NCCL_IB_GID_INDEX=${{NCCL_IB_GID_INDEX:-3}}"',
             "   else",
             "       # Native InfiniBand => GID 0",
-            "       export NCCL_IB_GID_INDEX={{NCCL_IB_GID_INDEX:-0}}",
-            '       export NCCL_ENV_ARG="--env NCCL_IB_GID_INDEX={{NCCL_IB_GID_INDEX:-0}}"',
+            "       export NCCL_IB_GID_INDEX=${{NCCL_IB_GID_INDEX:-0}}",
+            '       export NCCL_ENV_ARG="--env NCCL_IB_GID_INDEX=${{NCCL_IB_GID_INDEX:-0}}"',
             "   fi",
             "fi",
             "\n# Start Ray head node",
-            "head_node_port=$(find_available_port $head_node 8080 65535)",
+            # Ray uses worker ports in the 10002-19999 range by default; avoid picking
+            # the head (GCS) port from that range to prevent overlap.
+            "head_node_port=$(find_available_port $head_node_ip 20000 65535)",
             "ray_head=$head_node_ip:$head_node_port",
             'echo "Ray Head IP: $ray_head"',
             'echo "Starting HEAD at $head_node"',
             'srun --nodes=1 --ntasks=1 -w "$head_node" \\',
             "    CONTAINER_PLACEHOLDER",
+            '    bash -c "export VLLM_HOST_IP=$head_node_ip && export HOST_IP=$head_node_ip && \\',
             '    ray start --head --node-ip-address="$head_node_ip" --port=$head_node_port \\',
-            '    --num-cpus "$SLURM_CPUS_PER_TASK" --num-gpus {gpus_per_node} --block &',
+            '    --num-cpus "$SLURM_CPUS_PER_TASK" --num-gpus {gpus_per_node} --block" &',
             "sleep 10",
             "\n# Start Ray worker nodes",
             "worker_num=$((SLURM_JOB_NUM_NODES - 1))",
             "for ((i = 1; i <= worker_num; i++)); do",
             "    node_i=${{nodes_array[$i]}}",
             '    echo "Starting WORKER $i at $node_i"',
+            '    node_ip=$(srun --nodes=1 --ntasks=1 -w "$node_i" hostname --ip-address)',
+            '    echo "Node ip $node_ip"',
             '    srun --nodes=1 --ntasks=1 -w "$node_i" \\',
             "        CONTAINER_PLACEHOLDER",
+            '        bash -c "export VLLM_HOST_IP=$node_ip && export HOST_IP=$node_ip && \\',
             '        ray start --address "$ray_head" \\',
-            '        --num-cpus "$SLURM_CPUS_PER_TASK" --num-gpus {gpus_per_node} --block &',
+            '        --num-cpus "$SLURM_CPUS_PER_TASK" --num-gpus {gpus_per_node} --block" &',
             "    sleep 5",
             "done",
         ],
@@ -181,8 +192,8 @@ SLURM_SCRIPT_TEMPLATE: SlurmScriptTemplate = {
         ],
     },
     "find_server_port": [
-        "\nserver_port_number=$(find_available_port $head_node 8080 65535)",
-        'server_address="http://${head_node}:${server_port_number}/v1"',
+        "\nserver_port_number=$(find_available_port $head_node_ip 8080 65535)",
+        'server_address="http://${head_node_ip}:${server_port_number}/v1"',
     ],
     "write_to_json": [
         '\njson_path="{log_dir}/{model_name}.$SLURM_JOB_ID/{model_name}.$SLURM_JOB_ID.json"',
@@ -195,7 +206,7 @@ SLURM_SCRIPT_TEMPLATE: SlurmScriptTemplate = {
         "vllm": [
             "vllm serve {model_weights_path} \\",
             "    --served-model-name {model_name} \\",
-            '    --host "0.0.0.0" \\',
+            '    --host "$head_node_ip" \\',
             "    --port $server_port_number \\",
         ],
         "sglang": [
@@ -224,6 +235,7 @@ SLURM_SCRIPT_TEMPLATE: SlurmScriptTemplate = {
             "\nwait",
         ],
     },
+
 }
 
 
@@ -292,7 +304,7 @@ class BatchModelLaunchScriptTemplate(TypedDict):
 BATCH_MODEL_LAUNCH_SCRIPT_TEMPLATE: BatchModelLaunchScriptTemplate = {
     "shebang": "#!/bin/bash\n",
     "container_setup": f"{CONTAINER_LOAD_CMD}\n",
-    "bind_path": f"export {CONTAINER_MODULE_NAME_UPPER}_BINDPATH=${CONTAINER_MODULE_NAME_UPPER}_BINDPATH,/dev,/tmp,{{work_dir}}/.vec-inf-cache:$HOME/.cache,{{model_weights_path}}{{additional_binds}}",
+    "bind_path": f"export {CONTAINER_MODULE_NAME_UPPER}_BINDPATH=${CONTAINER_MODULE_NAME_UPPER}_BINDPATH,/dev,/tmp,{{work_dir}},{{work_dir}}/.vec-inf-cache:$HOME/.cache,{{model_weights_path}}{{additional_binds}}",
     "server_address_setup": [
         "source {src_dir}/find_port.sh",
         "head_node_ip=${{SLURMD_NODENAME}}",
@@ -308,7 +320,7 @@ BATCH_MODEL_LAUNCH_SCRIPT_TEMPLATE: BatchModelLaunchScriptTemplate = {
         '    "$json_path" > temp_{model_name}.json \\',
         '    && mv temp_{model_name}.json "$json_path"\n',
     ],
-    "container_command": f"{CONTAINER_MODULE_NAME} exec --nv --containall {{image_path}} \\",
+    "container_command": f"{CONTAINER_MODULE_NAME} exec --nv --cleanenv --containall {{image_path}} \\",
     "launch_cmd": {
         "vllm": [
             "vllm serve {model_weights_path} \\",

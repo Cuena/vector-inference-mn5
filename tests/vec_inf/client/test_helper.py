@@ -33,7 +33,7 @@ class TestModelLauncher:
     """Tests for the ModelLauncher class."""
 
     @pytest.fixture
-    def model_config(self) -> ModelConfig:
+    def model_config(self, tmp_path: Path) -> ModelConfig:
         """Fixture providing a basic model configuration for tests."""
         return ModelConfig(
             model_name="test-model",
@@ -43,6 +43,7 @@ class TestModelLauncher:
             num_nodes=1,
             vocab_size=32000,
             model_weights_parent_dir=Path("/path/to/models"),
+            log_dir=tmp_path / "vec-inf-logs",
             resource_type="l40s",
             partition="gpu",
             qos="normal",
@@ -177,6 +178,28 @@ class TestModelLauncher:
         assert params["num_nodes"] == "4"
         assert params["engine_args"]["--num-scheduler-steps"] == "16"
         assert params["engine_args"]["--pipeline-parallel-size"] == "4"
+
+    @patch("vec_inf.client._helper.utils.load_config")
+    @patch("vec_inf.client._helper.CPU_PER_GPU", 20)
+    @patch("vec_inf.client._helper.DISABLE_MEM_DIRECTIVE", True)
+    @patch("vec_inf.client._helper.MAX_CPUS_PER_TASK", 80)
+    def test_get_launch_params_applies_cluster_policies(
+        self, mock_load_config, model_config
+    ):
+        """cpus_per_task scales with GPUs and mem is removed when policy is enabled."""
+        updated_config = model_config.model_copy(
+            update={
+                "gpus_per_node": 4,
+                "vllm_args": {"--tensor-parallel-size": "4"},
+            }
+        )
+        mock_load_config.return_value = [updated_config]
+
+        launcher = ModelLauncher("test-model", {})
+        params = launcher.params
+
+        assert params["cpus_per_task"] == "80"
+        assert "mem_per_node" not in params
 
     @patch("vec_inf.client._helper.utils.load_config")
     def test_get_launch_params_with_multi_gpu_no_tp(
@@ -347,6 +370,43 @@ class TestModelLauncher:
     @patch("pathlib.Path.touch")
     @patch("pathlib.Path.open")
     @patch("pathlib.Path.rename")
+    def test_launch_with_stderr_but_job_id(
+        self,
+        mock_rename,
+        mock_open,
+        mock_touch,
+        mock_mkdir,
+        mock_script_gen,
+        mock_run_bash,
+        mock_load_config,
+        mock_configs,
+    ):
+        """Test launch succeeds if job id is present even when stderr is non-empty."""
+        mock_open.return_value = mock.mock_open().return_value
+        mock_load_config.return_value = mock_configs
+        mock_script_gen_instance = MagicMock()
+        mock_script_gen_instance.write_to_log_dir.return_value = Path(
+            "/path/to/slurm_script.sh"
+        )
+        mock_script_gen.return_value = mock_script_gen_instance
+        mock_run_bash.return_value = (
+            "Submitted batch job 12345\n",
+            "sbatch: error: Batch job submission failed: Unexpected message received\n",
+        )
+
+        launcher = ModelLauncher("test-model", {})
+        with pytest.warns(UserWarning):
+            response = launcher.launch()
+
+        assert response.slurm_job_id == "12345"
+
+    @patch("vec_inf.client._helper.utils.load_config")
+    @patch("vec_inf.client._helper.utils.run_bash_command")
+    @patch("vec_inf.client._helper.SlurmScriptGenerator")
+    @patch("pathlib.Path.mkdir")
+    @patch("pathlib.Path.touch")
+    @patch("pathlib.Path.open")
+    @patch("pathlib.Path.rename")
     def test_launch_with_sglang_engine(
         self,
         mock_rename,
@@ -381,12 +441,30 @@ class TestModelLauncher:
         assert launcher.engine == "sglang"
         assert response.config["engine"] == "sglang"
 
+    @patch("vec_inf.client._helper.utils.load_config")
+    @patch("vec_inf.client._helper.SlurmScriptGenerator")
+    def test_preview_launch(self, mock_script_gen, mock_load_config, mock_configs):
+        """Test preview returns resolved config and generated sbatch script."""
+        mock_load_config.return_value = mock_configs
+        mock_script_gen_instance = MagicMock()
+        mock_script_gen_instance._generate_script_content.return_value = (
+            "#!/bin/bash\n#SBATCH --job-name=test-model-vec-inf\n"
+        )
+        mock_script_gen.return_value = mock_script_gen_instance
+
+        launcher = ModelLauncher("test-model", {})
+        preview = launcher.preview_launch()
+
+        assert preview["model_name"] == "test-model"
+        assert "config" in preview
+        assert preview["sbatch_script"].startswith("#!/bin/bash")
+
 
 class TestBatchModelLauncher:
     """Tests for the BatchModelLauncher class."""
 
     @pytest.fixture
-    def batch_model_configs(self) -> list[ModelConfig]:
+    def batch_model_configs(self, tmp_path: Path) -> list[ModelConfig]:
         """Fixture providing batch model configurations for tests."""
         return [
             ModelConfig(
@@ -398,6 +476,7 @@ class TestBatchModelLauncher:
                 num_nodes=1,
                 vocab_size=32000,
                 model_weights_parent_dir=Path("/path/to/models"),
+                log_dir=tmp_path / "vec-inf-logs",
                 resource_type="l40s",
                 partition="gpu",
                 qos="normal",
@@ -419,6 +498,7 @@ class TestBatchModelLauncher:
                 num_nodes=1,
                 vocab_size=65536,
                 model_weights_parent_dir=Path("/path/to/models"),
+                log_dir=tmp_path / "vec-inf-logs",
                 resource_type="l40s",
                 partition="gpu",
                 qos="normal",
@@ -440,6 +520,7 @@ class TestBatchModelLauncher:
                 num_nodes=1,
                 vocab_size=32000,
                 model_weights_parent_dir=Path("/path/to/models"),
+                log_dir=tmp_path / "vec-inf-logs",
                 resource_type="l40s",
                 partition="gpu",
                 qos="normal",

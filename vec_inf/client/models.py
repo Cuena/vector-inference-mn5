@@ -222,6 +222,8 @@ class LaunchOptions:
         Directory for logs
     model_weights_parent_dir : str, optional
         Parent directory containing model weights
+    model_weights_dir_name : str, optional
+        Override directory name for model weights when it differs from model_name
     engine: str, optional
         Inference engine to use
     vllm_args : str, optional
@@ -230,6 +232,8 @@ class LaunchOptions:
         SGLang engine arguments
     env : str, optional
         Environment variables to be set
+    unset_env_vars : list[str], optional
+        Environment variable names to unset before launching
     config : str, optional
         Path to custom model config yaml
     """
@@ -239,6 +243,8 @@ class LaunchOptions:
     partition: Optional[str] = None
     resource_type: Optional[str] = None
     num_nodes: Optional[int] = None
+    ntasks: Optional[int] = None
+    ntasks_per_node: Optional[int] = None
     gpus_per_node: Optional[int] = None
     cpus_per_task: Optional[int] = None
     mem_per_node: Optional[str] = None
@@ -254,10 +260,12 @@ class LaunchOptions:
     venv: Optional[str] = None
     log_dir: Optional[str] = None
     model_weights_parent_dir: Optional[str] = None
+    model_weights_dir_name: Optional[str] = None
     engine: Optional[str] = None
     vllm_args: Optional[str] = None
     sglang_args: Optional[str] = None
     env: Optional[str] = None
+    unset_env_vars: Optional[list[str]] = None
     config: Optional[str] = None
 
 

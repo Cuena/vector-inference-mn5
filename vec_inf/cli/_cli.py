@@ -66,6 +66,16 @@ def cli() -> None:
     help="Number of nodes to use, default to suggested resource allocation for model",
 )
 @click.option(
+    "--ntasks",
+    type=int,
+    help="Total number of tasks (processes) to launch",
+)
+@click.option(
+    "--ntasks-per-node",
+    type=int,
+    help="Number of tasks to launch on each node",
+)
+@click.option(
     "--gpus-per-node",
     type=int,
     help="Number of GPUs/node to use, default to suggested resource allocation for model",
@@ -153,6 +163,11 @@ def cli() -> None:
     help="Output in JSON string",
 )
 @click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Preview resolved config and generated sbatch script without submitting",
+)
+@click.option(
     "--env",
     type=str,
     help="Environment variables to be set. Seperate variables with commas. Can also include path to a file containing environment variables seperated by newlines. e.g. --env 'TRITON_CACHE_DIR=/scratch/.cache/triton,my_custom_vars_file.env'",
@@ -228,13 +243,28 @@ def launch(
     """
     try:
         # Convert cli_kwargs to LaunchOptions
-        json_mode = cli_kwargs["json_mode"]
+        json_mode = bool(cli_kwargs["json_mode"])
+        dry_run = bool(cli_kwargs["dry_run"])
         del cli_kwargs["json_mode"]
+        del cli_kwargs["dry_run"]
 
         launch_options = LaunchOptions(**cli_kwargs)  # type: ignore
 
-        # Start the client and launch model inference server
+        # Start the client and launch/preview model inference server
         client = VecInfClient()
+        if dry_run:
+            preview = client.preview_launch_model(model_name, launch_options)
+            if json_mode:
+                click.echo(json.dumps(preview, indent=2))
+            else:
+                CONSOLE.print(
+                    "Dry run: no job was submitted. Showing resolved launch config and generated sbatch script."
+                )
+                click.echo(json.dumps(preview["config"], indent=2))
+                click.echo("\n# Generated sbatch script\n")
+                click.echo(preview["sbatch_script"])
+            return
+
         launch_response = client.launch_model(model_name, launch_options)
 
         # Display launch information

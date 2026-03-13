@@ -48,6 +48,8 @@ SLURM_JOB_CONFIG_ARGS = {
     "qos": "qos",
     "time": "time",
     "nodes": "num_nodes",
+    "ntasks": "ntasks",
+    "ntasks-per-node": "ntasks_per_node",
     "exclude": "exclude",
     "nodelist": "nodelist",
     "gres": "gres",

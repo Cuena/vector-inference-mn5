@@ -102,14 +102,22 @@ class LaunchResponseFormatter:
         table.add_row("Num Nodes", self.params["num_nodes"])
         table.add_row("GPUs/Node", self.params["gpus_per_node"])
         table.add_row("CPUs/Task", self.params["cpus_per_task"])
-        table.add_row("Memory/Node", self.params["mem_per_node"])
+        if self.params.get("mem_per_node"):
+            table.add_row("Memory/Node", self.params["mem_per_node"])
 
         # Add job config details
         if self.params.get("venv"):
             table.add_row("Virtual Environment", self.params["venv"])
+        model_weights_dir_name = self.params.get(
+            "model_weights_dir_name", self.model_name
+        )
         table.add_row(
             "Model Weights Directory",
-            str(Path(self.params["model_weights_parent_dir"], self.model_name)),
+            str(
+                Path(
+                    self.params["model_weights_parent_dir"], model_weights_dir_name
+                )
+            ),
         )
         table.add_row("Log Directory", self.params["log_dir"])
         table.add_row("Inference Engine", ENGINE_NAME_MAP[self.params["engine"]])
@@ -184,9 +192,11 @@ class BatchLaunchResponseFormatter:
             table.add_row(
                 "CPUs/Task", f"  {self.params['models'][model_name]['cpus_per_task']}"
             )
-            table.add_row(
-                "Memory/Node", f"  {self.params['models'][model_name]['mem_per_node']}"
-            )
+            if self.params["models"][model_name].get("mem_per_node"):
+                table.add_row(
+                    "Memory/Node",
+                    f"  {self.params['models'][model_name]['mem_per_node']}",
+                )
             table.add_row(
                 "Inference Engine",
                 f"  {ENGINE_NAME_MAP[self.params['models'][model_name]['engine']]}",

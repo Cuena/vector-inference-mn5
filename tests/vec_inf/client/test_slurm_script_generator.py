@@ -10,6 +10,7 @@ from vec_inf.client._slurm_script_generator import (
     BatchSlurmScriptGenerator,
     SlurmScriptGenerator,
 )
+from vec_inf.client._slurm_vars import CONTAINER_MODULE_NAME, CUDA_COMPAT_SHIM_DEFAULT
 
 
 class TestSlurmScriptGenerator:
@@ -54,8 +55,10 @@ class TestSlurmScriptGenerator:
         singularity = basic_params.copy()
         singularity.update(
             {
-                "venv": "apptainer",
+                "venv": CONTAINER_MODULE_NAME,
+                "work_dir": "/path/to/workdir",
                 "bind": "/scratch:/scratch,/data:/data",
+                "cuda_compat_shim": False,
                 "env": {
                     "CACHE_DIR": "/cache",
                     "MY_VAR": "5",
@@ -64,6 +67,18 @@ class TestSlurmScriptGenerator:
             }
         )
         return singularity
+
+    @pytest.fixture
+    def singularity_params_cuda_shim(self, singularity_params):
+        """Generate singularity params with CUDA compat shim enabled."""
+        params = singularity_params.copy()
+        params.update(
+            {
+                "cuda_compat_shim": True,
+                "cuda_compat_shim_source": "/usr/local/cuda-12.9/compat/lib.real/libcuda.so.1",
+            }
+        )
+        return params
 
     @pytest.fixture
     def temp_log_dir(self):
@@ -125,7 +140,7 @@ class TestSlurmScriptGenerator:
     def test_init_singularity_no_bind(self, basic_params):
         """Test Singularity initialization without additional binds."""
         params = basic_params.copy()
-        params["venv"] = "apptainer"
+        params["venv"] = CONTAINER_MODULE_NAME
         generator = SlurmScriptGenerator(params)
 
         assert generator.params == params
@@ -174,6 +189,8 @@ class TestSlurmScriptGenerator:
         assert "ray start --address" in setup
         assert "scontrol show hostnames" in setup
         assert "worker_num=$((SLURM_JOB_NUM_NODES - 1))" in setup
+        assert "export APPTAINERENV_VLLM_HOST_IP=$head_node_ip" in setup
+        assert "export APPTAINERENV_HOST_IP=$head_node_ip" in setup
 
     def test_generate_server_setup_singularity(self, singularity_params):
         """Test server setup with Singularity container."""
@@ -185,6 +202,55 @@ class TestSlurmScriptGenerator:
         assert (
             "module load " in setup or "apptainer" in setup.lower()
         )  # Remove module name since it's inconsistent between clusters
+        assert 'mkdir -p "$HOME/cuda_shim"' not in setup
+        assert "$HOME/cuda_shim:/usr/local/cuda/compat/lib" not in setup
+        assert "unset LD_PRELOAD" in setup
+        assert "unset SINGULARITYENV_LD_LIBRARY_PATH" in setup
+        assert "unset APPTAINERENV_LD_LIBRARY_PATH" in setup
+        assert "/dev,/tmp,/path/to/workdir,/path/to/workdir/.vec-inf-cache:$HOME/.cache" in setup
+
+    def test_generate_server_setup_singularity_cuda_shim_default(self, singularity_params):
+        """Test CUDA compat shim default behavior for container runs."""
+        params = singularity_params.copy()
+        params.pop("cuda_compat_shim", None)
+        params.pop("cuda_compat_shim_source", None)
+
+        generator = SlurmScriptGenerator(params)
+        setup = generator._generate_server_setup()
+
+        if CUDA_COMPAT_SHIM_DEFAULT:
+            assert 'mkdir -p "$HOME/cuda_shim"' in setup
+            assert "$HOME/cuda_shim:/usr/local/cuda/compat/lib" in setup
+        else:
+            assert 'mkdir -p "$HOME/cuda_shim"' not in setup
+            assert "$HOME/cuda_shim:/usr/local/cuda/compat/lib" not in setup
+        assert "unset LD_PRELOAD" in setup
+        assert "unset SINGULARITYENV_LD_LIBRARY_PATH" in setup
+        assert "unset APPTAINERENV_LD_LIBRARY_PATH" in setup
+
+    def test_generate_server_setup_singularity_with_cuda_shim(
+        self, singularity_params_cuda_shim
+    ):
+        """Test CUDA compat shim is injected when enabled."""
+        generator = SlurmScriptGenerator(singularity_params_cuda_shim)
+        setup = generator._generate_server_setup()
+
+        assert 'mkdir -p "$HOME/cuda_shim"' in setup
+        assert 'cp -f "$cuda_shim_src" "$HOME/cuda_shim/libcuda.so.1" || true' in setup
+        assert "$HOME/cuda_shim:/usr/local/cuda/compat/lib" in setup
+        assert "unset LD_PRELOAD" in setup
+        assert "unset SINGULARITYENV_LD_LIBRARY_PATH" in setup
+        assert "unset APPTAINERENV_LD_LIBRARY_PATH" in setup
+
+    def test_generate_server_setup_unset_env_vars(self, singularity_params):
+        """Test configured env vars are unset in generated setup."""
+        params = singularity_params.copy()
+        params["unset_env_vars"] = ["LD_LIBRARY_PATH"]
+
+        generator = SlurmScriptGenerator(params)
+        setup = generator._generate_server_setup()
+
+        assert "unset LD_LIBRARY_PATH" in setup
 
     def test_generate_launch_cmd_venv(self, basic_params):
         """Test launch command generation with virtual environment."""
@@ -295,7 +361,8 @@ class TestSlurmScriptGenerator:
         generator = SlurmScriptGenerator(sglang_params)
         launch_cmd = generator._generate_launch_cmd()
 
-        assert "apptainer exec --nv" in launch_cmd
+        assert f"{CONTAINER_MODULE_NAME} exec --nv" in launch_cmd
+        assert "--cleanenv" in launch_cmd
         assert "sglang.launch_server" in launch_cmd
         assert "source" not in launch_cmd
 
@@ -319,7 +386,8 @@ class TestSlurmScriptGenerator:
         generator = SlurmScriptGenerator(singularity_params)
         launch_cmd = generator._generate_launch_cmd()
 
-        assert "apptainer exec --nv" in launch_cmd
+        assert f"{CONTAINER_MODULE_NAME} exec --nv" in launch_cmd
+        assert "--cleanenv" in launch_cmd
         assert "source" not in launch_cmd
 
     def test_generate_launch_cmd_boolean_args(self, basic_params):
@@ -440,9 +508,9 @@ class TestBatchSlurmScriptGenerator:
     def batch_singularity_params(self, batch_params):
         """Generate batch SLURM configuration parameters with Singularity."""
         singularity_params = batch_params.copy()
-        singularity_params["venv"] = "apptainer"  # Set top-level venv to apptainer
+        singularity_params["venv"] = CONTAINER_MODULE_NAME
         for model_name in singularity_params["models"]:
-            singularity_params["models"][model_name]["venv"] = "apptainer"
+            singularity_params["models"][model_name]["venv"] = CONTAINER_MODULE_NAME
             singularity_params["models"][model_name]["bind"] = (
                 "/scratch:/scratch,/data:/data"
             )
@@ -478,9 +546,9 @@ class TestBatchSlurmScriptGenerator:
     def test_init_singularity_no_bind(self, batch_params):
         """Test Singularity initialization without additional binds."""
         params = batch_params.copy()
-        params["venv"] = "apptainer"  # Set top-level venv to apptainer
+        params["venv"] = CONTAINER_MODULE_NAME
         for model_name in params["models"]:
-            params["models"][model_name]["venv"] = "apptainer"
+            params["models"][model_name]["venv"] = CONTAINER_MODULE_NAME
 
         generator = BatchSlurmScriptGenerator(params)
 
@@ -527,6 +595,8 @@ class TestBatchSlurmScriptGenerator:
         assert len(generator.script_paths) == 1
         mock_touch.assert_called_once()
         mock_write_text.assert_called_once()
+        content = mock_write_text.call_args[0][0]
+        assert f"{CONTAINER_MODULE_NAME} exec --nv --cleanenv" in content
 
     @patch("vec_inf.client._slurm_script_generator.datetime")
     @patch("pathlib.Path.touch")

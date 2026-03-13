@@ -6,6 +6,7 @@ and configuration handling for the vector inference package.
 
 import json
 import os
+import re
 import subprocess
 import warnings
 from pathlib import Path
@@ -38,6 +39,25 @@ def run_bash_command(command: str) -> tuple[str, str]:
         command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
     )
     return process.communicate()
+
+
+def extract_sbatch_job_id(output: str) -> str | None:
+    """Extract the SLURM job id from `sbatch` output.
+
+    Parameters
+    ----------
+    output : str
+        The stdout output from an `sbatch` invocation.
+
+    Returns
+    -------
+    str | None
+        The job id as a string if found, otherwise None.
+    """
+    match = re.search(r"\bSubmitted batch job\s+(\d+)\b", output)
+    if not match:
+        return None
+    return match.group(1)
 
 
 def read_slurm_log(
@@ -232,8 +252,7 @@ def model_health_check(
 def load_config(config_path: Optional[str] = None) -> list[ModelConfig]:
     """Load the model configuration.
 
-    Loads configuration from default and user-specified paths, merging them
-    if both exist. User configuration takes precedence over default values.
+    Loads configuration from explicit and environment-derived paths.
 
     Parameters
     ----------
@@ -248,13 +267,10 @@ def load_config(config_path: Optional[str] = None) -> list[ModelConfig]:
     Notes
     -----
     Configuration is loaded from:
-    1. User path: specified by config_path
-    2. Default path: package's config/models.yaml or CACHED_MODEL_CONFIG_PATH if exists
-    3. Environment variable: specified by VEC_INF_CONFIG environment variable
-        and merged with default config
-
-    If user configuration exists, it will be merged with default configuration,
-    with user values taking precedence for overlapping fields.
+    1. User path: specified by `config_path`
+    2. `VEC_INF_MODEL_CONFIG` environment variable
+    3. `VEC_INF_CONFIG_DIR/models.yaml`
+    4. Default path: package's config/models.yaml or CACHED_MODEL_CONFIG_PATH if exists
     """
 
     def load_yaml_config(path: Path) -> dict[str, Any]:
@@ -274,54 +290,42 @@ def load_config(config_path: Optional[str] = None) -> list[ModelConfig]:
             for name, model_data in config.get("models", {}).items()
         ]
 
-    def resolve_config_path_from_env_var() -> Path | None:
-        """Resolve the config path from the environment variable."""
-        config_dir = os.getenv("VEC_INF_CONFIG_DIR")
-        config_path = os.getenv("VEC_INF_MODEL_CONFIG")
-        if config_path:
-            return Path(config_path)
-        if config_dir:
-            return Path(config_dir, "models.yaml")
-        return None
-
-    def update_config(
-        config: dict[str, Any], user_config: dict[str, Any]
-    ) -> dict[str, Any]:
-        """Update the config with the user config."""
-        for name, data in user_config.get("models", {}).items():
-            if name in config.get("models", {}):
-                config["models"][name].update(data)
-            else:
-                config.setdefault("models", {})[name] = data
-
-        return config
-
     # 1. If config_path is given, use only that
     if config_path:
         config = load_yaml_config(Path(config_path))
         return process_config(config)
 
-    # 2. Otherwise, load default config
+    # 2. If VEC_INF_MODEL_CONFIG is set, use it as the source config
+    env_model_config = os.getenv("VEC_INF_MODEL_CONFIG")
+    if env_model_config:
+        env_model_path = Path(env_model_config)
+        if env_model_path.exists():
+            return process_config(load_yaml_config(env_model_path))
+        warnings.warn(
+            f"WARNING: Could not find user config: {str(env_model_path)}. Falling back to default config.",
+            UserWarning,
+            stacklevel=2,
+        )
+
+    # 3. If VEC_INF_CONFIG_DIR is set, use <dir>/models.yaml as the source config
+    env_config_dir = os.getenv("VEC_INF_CONFIG_DIR")
+    if env_config_dir:
+        env_dir_model_path = Path(env_config_dir, "models.yaml")
+        if env_dir_model_path.exists():
+            return process_config(load_yaml_config(env_dir_model_path))
+        warnings.warn(
+            f"WARNING: Could not find user config: {str(env_dir_model_path)}. Falling back to default config.",
+            UserWarning,
+            stacklevel=2,
+        )
+
+    # 4. Otherwise, load default config
     default_path = (
         CACHED_MODEL_CONFIG_PATH
         if CACHED_MODEL_CONFIG_PATH.exists()
         else Path(__file__).resolve().parent.parent / "config" / "models.yaml"
     )
-    config = load_yaml_config(default_path)
-
-    # 3. If user config exists, merge it
-    user_path = resolve_config_path_from_env_var()
-    if user_path and user_path.exists():
-        user_config = load_yaml_config(user_path)
-        config = update_config(config, user_config)
-    elif user_path:
-        warnings.warn(
-            f"WARNING: Could not find user config: {str(user_path)}, revert to default config located at {default_path}",
-            UserWarning,
-            stacklevel=2,
-        )
-
-    return process_config(config)
+    return process_config(load_yaml_config(default_path))
 
 
 def parse_launch_output(output: str) -> tuple[str, dict[str, str]]:

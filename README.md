@@ -21,7 +21,7 @@ Use this flow if you just cloned the repo and want to avoid reusing paths from a
 1. Clone and enter the repository:
 
 ```bash
-git clone <your-github-repo-url>
+git clone git@github.com:Cuena/vector-inference-mn5.git
 cd vector-inference
 ```
 
@@ -230,6 +230,6 @@ If you found Vector Inference useful in your research or applications, please ci
   organization = {Vector Institute},
   year         = {<YEAR_OF_RELEASE>},
   version      = {<VERSION_TAG>},
-  url          = {<REPO_URL>}
+  url          = {https://github.com/Cuena/vector-inference-mn5}
 }
 ```

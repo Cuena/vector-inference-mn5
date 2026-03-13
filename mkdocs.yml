@@ -5,6 +5,8 @@ extra:
   social:
     - icon: fontawesome/brands/discord
       link: 404.html
+    - icon: fontawesome/brands/github
+      link: https://github.com/Cuena/vector-inference-mn5
   version:
     provider: mike
     default: latest
@@ -58,6 +60,9 @@ plugins:
             show_symbol_type_heading: true
             show_symbol_type_toc: true
 site_name: Vector Inference
+repo_url: https://github.com/Cuena/vector-inference-mn5
+repo_name: Cuena/vector-inference-mn5
+site_url: https://cuena.github.io/vector-inference-mn5/
 theme:
   name: material
   custom_dir: docs/overrides
@@ -76,6 +81,8 @@ theme:
     - toc.follow
   logo: assets/vector-logo.svg
   logo_footer: assets/vector-logo.svg
+  icon:
+    repo: fontawesome/brands/github
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
