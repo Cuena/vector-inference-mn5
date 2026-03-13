@@ -1,0 +1,50 @@
+paths:
+  # The public MN5 profile assumes:
+  #   $VEC_INF_PROJECT_ROOT/containers
+  #   $VEC_INF_PROJECT_ROOT/vec-inf-shared
+  #   $VEC_INF_PROJECT_ROOT/models
+  # Override this file if your project layout differs.
+  image_path: "$VEC_INF_PROJECT_ROOT/containers/vector-inference_latest.sif" # Backwards compatibility
+  vllm_image_path: "$VEC_INF_PROJECT_ROOT/containers/vector-inference-vllm_latest.sif"
+  sglang_image_path: "$VEC_INF_PROJECT_ROOT/containers/vector-inference-sglang_latest.sif"
+  cached_model_config_path: "$VEC_INF_PROJECT_ROOT/vec-inf-shared/models.yaml"
+
+containerization:
+  module_load_cmd: "module load singularity"
+  module_name: "singularity"
+  cuda_compat_shim_default: true
+
+limits:
+  max_gpus_per_node: 4
+  max_num_nodes: 16
+  max_cpus_per_task: 80
+cpu_per_gpu: 20
+disable_mem_directive: true
+
+allowed_values:
+  qos: []
+  partition: []
+  resource_type: []
+
+required_args:
+  account: "VEC_INF_ACCOUNT"
+  work_dir: "VEC_INF_WORK_DIR"
+
+python_version: "python3.12"
+
+model_types: ["LLM", "VLM", "Text_Embedding", "Reward_Modeling", "OCR"]
+
+default_args:
+  cpus_per_task: "20"
+  time: "02:00:00"
+  qos: "acc_debug"
+  partition: ""
+  resource_type: ""
+  exclude: ""
+  nodelist: ""
+  bind: ""
+  venv: "singularity"
+  data_type: "auto"
+  log_dir: "~/.vec-inf-logs"
+  model_weights_parent_dir: "$VEC_INF_PROJECT_ROOT/models"
+  work_dir: "/home/bsc/$USER/vec-inf-work"

@@ -5,8 +5,6 @@ extra:
   social:
     - icon: fontawesome/brands/discord
       link: 404.html
-    - icon: fontawesome/brands/github
-      link: https://github.com/VectorInstitute/vector-inference
   version:
     provider: mike
     default: latest
@@ -32,6 +30,7 @@ markdown_extensions:
 nav:
   - Home: index.md
   - User Guide: user_guide.md
+  - MareNostrum5: marenostrum5.md
   - API Reference: api.md
   - Contributing: contributing.md
 plugins:
@@ -58,10 +57,7 @@ plugins:
             show_root_toc_entry: false
             show_symbol_type_heading: true
             show_symbol_type_toc: true
-repo_url: https://github.com/VectorInstitute/vector-inference
-repo_name: VectorInstitute/vector-inference
 site_name: Vector Inference
-site_url: https://vectorinstitute.github.io/vector-inference/
 theme:
   name: material
   custom_dir: docs/overrides
@@ -78,8 +74,6 @@ theme:
     - search.suggest
     - search.highlight
     - toc.follow
-  icon:
-    repo: fontawesome/brands/github
   logo: assets/vector-logo.svg
   logo_footer: assets/vector-logo.svg
   palette:

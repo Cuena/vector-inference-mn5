@@ -4,7 +4,7 @@
 
 ### `launch` command
 
-The `launch` command allows users to launch a OpenAI-compatible model inference server as a slurm job. If the job successfully launches, a URL endpoint is exposed for the user to send requests for inference.
+The `launch` command allows users to launch an OpenAI-compatible model inference server as a Slurm job. If the job successfully launches, a URL endpoint is exposed for the user to send requests for inference.
 
 We will use the Meta Llama 3.1 model as example, to launch an OpenAI compatible inference server for Meta-Llama-3.1-8B-Instruct, run:
 
@@ -39,11 +39,11 @@ You should see an output like the following:
 **NOTE**: You can set the required fields in the environment configuration (`environment.yaml`), it's a mapping between required arguments and their corresponding environment variables. On the Vector **Killarney** Cluster environment, the required fields are:
 
   * `--account`, `-A`: The Slurm account, this argument can be set to default by setting environment variable `VEC_INF_ACCOUNT`.
-  * `--work-dir`, `-D`: A working directory other than your home directory, this argument can be set to default by seeting environment variable `VEC_INF_WORK_DIR`.
+  * `--work-dir`, `-D`: A working directory other than your home directory, this argument can be set to default by setting environment variable `VEC_INF_WORK_DIR`.
 
 #### Overrides
 
-Models that are already supported by `vec-inf` would be launched using the cached configuration or [default configuration](https://github.com/VectorInstitute/vector-inference/blob/main/vec_inf/config). You can override these values by providing additional parameters. Use `vec-inf launch --help` to see the full list of parameters that can be overriden. For example, if `resource-type` is to be overriden:
+Models that are already supported by `vec-inf` are launched using the cached configuration or the default configuration in `vec_inf/config`. You can override these values by providing additional parameters. Use `vec-inf launch --help` to see the full list of parameters that can be overridden. For example, if `resource-type` is to be overridden:
 
 ```bash
 vec-inf launch Meta-Llama-3.1-8B-Instruct --resource-type <new_resource_type>
@@ -75,7 +75,7 @@ You can also launch your own custom model as long as the model architecture is s
 * Your model weights directory naming convention should follow `$MODEL_FAMILY-$MODEL_VARIANT` ($MODEL_VARIANT is OPTIONAL).
 * Your model weights directory should contain HuggingFace format weights.
 * You should specify your model configuration by:
-  * Creating a custom configuration file for your model and specify its path via setting the environment variable `VEC_INF_MODEL_CONFIG` (This one will supersede `VEC_INF_CONFIG_DIR` if that is also set). Check the [default parameters](vec_inf/config/models.yaml) file for the format of the config file. All the parameters for the model should be specified in that config file.
+  * Creating a custom configuration file for your model and specify its path via setting the environment variable `VEC_INF_MODEL_CONFIG` (This one will supersede `VEC_INF_CONFIG_DIR` if that is also set). Check `vec_inf/config/models.yaml` for the format of the config file. All the parameters for the model should be specified in that config file.
   * Add your model configuration to the cached `models.yaml` in your cluster environment (if you have write access to the cached configuration directory).
   * Using launch command options to specify your model setup.
 * For other model launch parameters you can reference the default values for similar models using the [`list` command ](#list-command).
@@ -108,7 +108,7 @@ You would then set the `VEC_INF_MODEL_CONFIG` path using:
 export VEC_INF_MODEL_CONFIG=/h/<username>/my-model-config.yaml
 ```
 
-**NOTE**: There are other parameters that can also be added to the config but not shown in this example, check the [`ModelConfig`](https://github.com/VectorInstitute/vector-inference/blob/main/vec_inf/client/config.py) for details.
+**NOTE**: There are other parameters that can also be added to the config but not shown in this example. Check the API reference for `ModelConfig` for details.
 
 During the launch process, relevant log files and scripts will be written to a log directory (default to `.vec-inf-logs` in your home directory), and a cache directory (`.vec-inf-cache`) will be created in your working directory (defaults to your home directory if not specified or required) for torch compile cache.
 
@@ -151,7 +151,7 @@ You should see an output like the following:
 The inference servers will begin launching only after all requested resources have been allocated, preventing resource waste. Unlike the `launch` command, `batch-launch` does not accept additional launch parameters from the command line. Users must either:
 
 - Specify a batch launch configuration file using the `--batch-config` option, or
-- Ensure model launch configurations are available at the default location (cached config or user-defined `VEC_INF_CONFIG`)
+- Ensure model launch configurations are available at the default location (cached config or user-defined `VEC_INF_CONFIG_DIR`)
 
 Since batch launches use heterogeneous jobs, users can request different partitions and resource amounts for each model. After launch, you can monitor individual servers using the standard commands (`status`, `metrics`, etc.) by providing the specific Slurm job ID for each server (e.g. 17480109+0, 17480109+1).
 
@@ -322,7 +322,7 @@ With every model launch, a Slurm script will be generated dynamically based on t
 
 ## Send inference requests
 
-Once the inference server is ready, you can start sending in inference requests. We provide example scripts for sending inference requests in [`examples`](https://github.com/VectorInstitute/vector-inference/blob/main/examples) folder. Make sure to update the model server URL and the model weights location in the scripts. For example, you can run `python examples/inference/llm/chat_completions.py`, and you should expect to see an output like the following:
+Once the inference server is ready, you can start sending in inference requests. We provide example scripts in the `examples/` directory. Make sure to update the model server URL and the model weights location in the scripts. For example, you can run `python examples/inference/llm/chat_completions.py`, and you should expect to see an output like the following:
 
 ```json
 {
@@ -371,4 +371,4 @@ The example provided above is for the Vector Killarney cluster, change the varia
 You can also use the `vec_inf` Python API to launch and manage inference servers.
 
 Check out the [Python API documentation](api.md) for more details. There
-are also Python API usage examples in the [`examples/api`](https://github.com/VectorInstitute/vector-inference/blob/main/examples/api) folder.
+There are also Python API usage examples in `examples/api`.
