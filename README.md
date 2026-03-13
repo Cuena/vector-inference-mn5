@@ -12,83 +12,81 @@ This repository provides an easy-to-use solution to run inference servers on [Sl
 
 ## MareNostrum5 setup
 
-This repository includes MN5-ready helper scripts and a cluster profile for public users.
+This repository includes MN5-ready helper scripts, a public MN5 profile, and a setup wizard that writes the launcher config for you.
 
-### Fresh clone (step-by-step)
-
-Use this flow if you just cloned the repo and want to avoid reusing paths from an older setup.
+### Recommended first run
 
 1. Clone and enter the repository:
 
 ```bash
-git clone git@github.com:Cuena/vector-inference-mn5.git
-cd vector-inference
+git clone git@github.com:Cuena/vector-inference-mn5.git vector-inference-public
+cd vector-inference-public
 ```
 
-2. Create your local launch config:
+2. Run the wizard:
 
 ```bash
-cp scripts/.launch.env.example scripts/.launch.env
+uv run vec-inf-mn5-wizard
 ```
 
-3. Edit `scripts/.launch.env` with explicit v2-isolated paths (recommended):
+The wizard uses `rich`, explains each setting, writes [`scripts/.launch.env`](scripts/.launch.env.example) for you, and pre-fills team-oriented defaults for the vLLM path such as:
+- the remote checkout under `/home/bsc/<REMOTE_USER>/repos/<repo-name>`
+- the remote `vec-inf` virtualenv at `${RSYNC_DEST}/.venv`
+- the bundled MN5 config dir at `${RSYNC_DEST}/vec_inf/config/marenostrum5`
+- the current team weights root `/gpfs/scratch/bsc70/hpai/storage/projects/heka/models`
+- a lightweight smoke-test model: `Llama-3.2-3B-Instruct`
+
+Before running anything, the wizard shows the exact command line and the expected side effects. After writing the config, it can optionally:
+- run [`./scripts/first_time_setup.sh`](scripts/first_time_setup.sh)
+- launch `Llama-3.2-3B-Instruct` through [`./scripts/launch_and_tunnel.sh`](scripts/launch_and_tunnel.sh)
+
+3. If you skip the optional launch, you can run it later:
 
 ```bash
-REMOTE_USER="your_bsc_user"
-RSYNC_ENABLED=1
-RSYNC_DEST="/home/bsc/your_bsc_user/repos/vector-inference-v2"
-VEC_INF_ENV="/home/bsc/your_bsc_user/repos/vector-inference-v2/.venv"
-VEC_INF_CONFIG_DIR_REMOTE="/home/bsc/your_bsc_user/repos/vector-inference-v2/vec_inf/config/marenostrum5"
-REMOTE_WORK_DIR="/home/bsc/your_bsc_user/repos/vector-inference-v2"
-REMOTE_ACCOUNT="your_slurm_account"
-VEC_INF_PROJECT_ROOT="/gpfs/projects/<project>/vec-inf"
-VEC_INF_STORAGE_USER="your_storage_user"
+./scripts/launch_and_tunnel.sh Llama-3.2-3B-Instruct 5678
 ```
 
-4. Meaning of the key variables:
-- `REMOTE_USER`: your BSC login username; used for SSH, rsync, and default `/home/bsc/<user>/...` paths.
-- `RSYNC_DEST`: remote checkout path on MN5 where this repo is copied.
-- `VEC_INF_ENV`: remote Python environment used to run `vec-inf launch`; normally `${RSYNC_DEST}/.venv`.
-- `VEC_INF_CONFIG_DIR_REMOTE`: remote directory containing the MN5 `environment.yaml` and `models.yaml`.
-- `REMOTE_WORK_DIR`: working directory passed to Slurm jobs; vec-inf uses it for runtime caches such as `.vec-inf-cache`.
-- `REMOTE_ACCOUNT`: Slurm account to charge the job to.
-- `VEC_INF_PROJECT_ROOT`: shared project directory containing `containers/`, `vec-inf-shared/`, and `models/`.
-- `VEC_INF_STORAGE_USER`: optional override only when your `/gpfs/.../users/<owner>/...` storage owner differs from `REMOTE_USER`.
-
-`models.yaml` resolves the compile YAMLs from this repo checkout automatically. Edit [`vec_inf/config/marenostrum5/environment.yaml`](vec_inf/config/marenostrum5/environment.yaml) only if your project layout differs from those defaults.
-
-5. Run first-time remote setup (sync + remote `uv sync`):
-
-```bash
-./scripts/first_time_setup.sh
-```
-
-Optional dry-run preview (no remote writes):
-
-```bash
-./scripts/first_time_setup.sh --dry-run
-```
-
-6. Launch model and open local tunnel:
-
-```bash
-./scripts/launch_and_tunnel.sh Meta-Llama-3.1-8B-Instruct 5678
-```
-
-7. Use endpoint locally:
+4. Use the local endpoint:
 
 ```text
 http://localhost:5678/v1
 ```
 
+### Manual fallback
+
+If you prefer to edit files yourself instead of using the wizard:
+
+```bash
+cp scripts/.launch.env.example scripts/.launch.env
+```
+
+The important fields are:
+- `REMOTE_USER`: your BSC login username.
+- `VEC_INF_STORAGE_USER`: only needed when `/gpfs/.../users/<name>/...` differs from `REMOTE_USER`.
+- `RSYNC_DEST`: remote checkout location on MN5.
+- `VEC_INF_ENV`: remote Python environment used for `vec-inf launch`.
+- `VEC_INF_CONFIG_DIR_REMOTE`: remote MN5 config directory.
+- `REMOTE_WORK_DIR`: working directory passed to Slurm jobs.
+- `REMOTE_ACCOUNT`: Slurm account.
+- `VEC_INF_VLLM_IMAGE_PATH`: default vLLM image used by the MN5 profile.
+- `VEC_INF_MODEL_WEIGHTS_PARENT_DIR`: parent directory containing model weights.
+
+The tracked MN5 profile in [`vec_inf/config/marenostrum5/environment.yaml`](vec_inf/config/marenostrum5/environment.yaml) now reads those path values from `.launch.env`, so most users do not need to edit the YAML directly. This onboarding flow configures vLLM only. You only need to touch [`vec_inf/config/marenostrum5/models.yaml`](vec_inf/config/marenostrum5/models.yaml) when a specific model should use a different image or runtime override.
+
 ### Why explicit paths matter
 
-If `RSYNC_DEST`, `VEC_INF_ENV`, or `REMOTE_WORK_DIR` are left empty, scripts fall back to default locations and may reuse older data/environments. Setting explicit `-v2` paths keeps runs isolated. For the public MN5 profile, keeping `VEC_INF_PROJECT_ROOT` in `.launch.env` also avoids baking project-specific paths into tracked YAML files.
+If `RSYNC_DEST`, `VEC_INF_ENV`, or `REMOTE_WORK_DIR` are left empty, scripts fall back to default locations and may reuse older data or environments. Keeping them explicit avoids surprising reuse of stale remote checkouts.
 
 See [`docs/marenostrum5.md`](docs/marenostrum5.md) for full details.
 
 ## Installation
 Choose the installation workflow that matches how you plan to run `vec-inf`:
+
+If you are onboarding to the repo-backed MN5 workflow, use the wizard from this checkout:
+
+```bash
+uv run vec-inf-mn5-wizard
+```
 
 If you only need the published package/CLI, install from PyPI:
 

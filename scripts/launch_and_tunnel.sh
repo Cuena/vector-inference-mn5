@@ -72,6 +72,8 @@ fi
 _launch_env_vars=(
     REMOTE_LAUNCH_HOST REMOTE_TRANSFER_HOST REMOTE_INTERNET_HOST
     REMOTE_USER VEC_INF_STORAGE_USER VEC_INF_PROJECT_ROOT
+    VEC_INF_VLLM_IMAGE_PATH VEC_INF_CACHED_MODEL_CONFIG_PATH
+    VEC_INF_MODEL_WEIGHTS_PARENT_DIR
     MODEL_NAME LOCAL_PORT AUTO_KILL_STALE_TUNNEL
     RSYNC_ENABLED RSYNC_SRC RSYNC_DEST VEC_INF_ENV VEC_INF_CONFIG_DIR_REMOTE
     REMOTE_WORK_DIR REMOTE_ACCOUNT REMOTE_QOS UV_SYNC_ARGS
@@ -183,8 +185,8 @@ if [ -z "${VEC_INF_CONFIG_DIR_REMOTE}" ]; then
     VEC_INF_CONFIG_DIR_REMOTE="${RSYNC_DEST}/vec_inf/config/marenostrum5"
 fi
 
-# Owner used in MN5 storage paths inside models.yaml.
-# Defaults to REMOTE_USER, but can be overridden when storage owner differs.
+# Directory name used in MN5 paths under /gpfs/.../users/<name>/...
+# Defaults to REMOTE_USER, but can be overridden when that path segment differs.
 VEC_INF_STORAGE_USER="${VEC_INF_STORAGE_USER:-$REMOTE_USER}"
 
 # Shared project root used by the public MN5 environment profile.
@@ -435,6 +437,12 @@ fi
 if [ -n "${VEC_INF_STORAGE_USER:-}" ]; then
     echo "Storage user: $VEC_INF_STORAGE_USER"
 fi
+if [ -n "${VEC_INF_VLLM_IMAGE_PATH:-}" ]; then
+    echo "vLLM image:   $VEC_INF_VLLM_IMAGE_PATH"
+fi
+if [ -n "${VEC_INF_MODEL_WEIGHTS_PARENT_DIR:-}" ]; then
+    echo "Weights root: $VEC_INF_MODEL_WEIGHTS_PARENT_DIR"
+fi
 if [ -n "${VEC_INF_PROJECT_ROOT:-}" ]; then
     echo "Project root: $VEC_INF_PROJECT_ROOT"
 else
@@ -484,6 +492,15 @@ if [ "${VEC_INF_CONFIG_DIR_REMOTE}" != "NONE" ]; then
 fi
 if [ -n "${VEC_INF_STORAGE_USER:-}" ]; then
     REMOTE_CMD+=" && export VEC_INF_STORAGE_USER='$VEC_INF_STORAGE_USER'"
+fi
+if [ -n "${VEC_INF_VLLM_IMAGE_PATH:-}" ]; then
+    REMOTE_CMD+=" && export VEC_INF_VLLM_IMAGE_PATH='$VEC_INF_VLLM_IMAGE_PATH'"
+fi
+if [ -n "${VEC_INF_CACHED_MODEL_CONFIG_PATH:-}" ]; then
+    REMOTE_CMD+=" && export VEC_INF_CACHED_MODEL_CONFIG_PATH='$VEC_INF_CACHED_MODEL_CONFIG_PATH'"
+fi
+if [ -n "${VEC_INF_MODEL_WEIGHTS_PARENT_DIR:-}" ]; then
+    REMOTE_CMD+=" && export VEC_INF_MODEL_WEIGHTS_PARENT_DIR='$VEC_INF_MODEL_WEIGHTS_PARENT_DIR'"
 fi
 if [ -n "${VEC_INF_PROJECT_ROOT:-}" ]; then
     REMOTE_CMD+=" && export VEC_INF_PROJECT_ROOT='$VEC_INF_PROJECT_ROOT'"

@@ -1,13 +1,10 @@
 paths:
-  # The public MN5 profile assumes:
-  #   $VEC_INF_PROJECT_ROOT/containers
-  #   $VEC_INF_PROJECT_ROOT/vec-inf-shared
-  #   $VEC_INF_PROJECT_ROOT/models
-  # Override this file if your project layout differs.
-  image_path: "$VEC_INF_PROJECT_ROOT/containers/vector-inference_latest.sif" # Backwards compatibility
-  vllm_image_path: "$VEC_INF_PROJECT_ROOT/containers/vector-inference-vllm_latest.sif"
-  sglang_image_path: "$VEC_INF_PROJECT_ROOT/containers/vector-inference-sglang_latest.sif"
-  cached_model_config_path: "$VEC_INF_PROJECT_ROOT/vec-inf-shared/models.yaml"
+  # The setup wizard populates these through scripts/.launch.env. They still
+  # accept direct edits when you want to bypass the wizard.
+  image_path: "${VEC_INF_VLLM_IMAGE_PATH:-/gpfs/scratch/bsc70/hpai/storage/users/$VEC_INF_STORAGE_USER/singularity/vllm_$VEC_INF_STORAGE_USER.sif}"
+  vllm_image_path: "${VEC_INF_VLLM_IMAGE_PATH:-/gpfs/scratch/bsc70/hpai/storage/users/$VEC_INF_STORAGE_USER/singularity/vllm_$VEC_INF_STORAGE_USER.sif}"
+  sglang_image_path: "${VEC_INF_VLLM_IMAGE_PATH:-/gpfs/scratch/bsc70/hpai/storage/users/$VEC_INF_STORAGE_USER/singularity/vllm_$VEC_INF_STORAGE_USER.sif}"
+  cached_model_config_path: "${VEC_INF_CACHED_MODEL_CONFIG_PATH:-/path/to/vec-inf-shared/models.yaml}"
 
 containerization:
   module_load_cmd: "module load singularity"
@@ -46,5 +43,6 @@ default_args:
   venv: "singularity"
   data_type: "auto"
   log_dir: "~/.vec-inf-logs"
-  model_weights_parent_dir: "$VEC_INF_PROJECT_ROOT/models"
+  # Parent directory that contains model folders such as Qwen3.5-27B/.
+  model_weights_parent_dir: "${VEC_INF_MODEL_WEIGHTS_PARENT_DIR:-/gpfs/scratch/bsc70/hpai/storage/projects/heka/models}"
   work_dir: "/home/bsc/$USER/vec-inf-work"

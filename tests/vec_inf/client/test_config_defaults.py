@@ -46,6 +46,28 @@ def test_model_config_expands_env_paths(monkeypatch: pytest.MonkeyPatch) -> None
     assert cfg.model_weights_parent_dir == Path("/tmp/vec-inf-root/models")
 
 
+def test_model_config_expands_env_paths_with_defaults(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ModelConfig expands shell-style default placeholders in path fields."""
+    monkeypatch.delenv("TEST_VEC_INF_ROOT", raising=False)
+    monkeypatch.setenv("TEST_STORAGE_USER", "example_user")
+
+    cfg = ModelConfig(
+        model_name="test-model",
+        model_family="test-family",
+        model_type="LLM",
+        num_nodes=1,
+        gpus_per_node=1,
+        vocab_size=32000,
+        model_weights_parent_dir=(
+            "${TEST_VEC_INF_ROOT:-/gpfs/scratch/users/$TEST_STORAGE_USER/models}"
+        ),
+    )
+
+    assert cfg.model_weights_parent_dir == Path("/gpfs/scratch/users/example_user/models")
+
+
 def test_model_config_resolves_repo_relative_engine_args() -> None:
     """ModelConfig resolves @repo paths in engine argument dictionaries."""
     cfg = ModelConfig(

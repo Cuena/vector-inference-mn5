@@ -79,6 +79,7 @@ conflicts = [
 
 [project.scripts]
 vec-inf = "vec_inf.cli._cli:cli"
+vec-inf-mn5-wizard = "vec_inf.mn5_setup_wizard:main"
 
 [build-system]
 requires = ["hatchling"]

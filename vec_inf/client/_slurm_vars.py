@@ -11,17 +11,33 @@ from typing_extensions import Literal
 
 
 CACHED_CONFIG_DIR = Path("/model-weights/vec-inf-shared")
-_PATH_VAR_PATTERN = re.compile(r"\$(\w+)|\$\{(\w+)\}")
+_PATH_VAR_PATTERN = re.compile(r"\$(\w+)|\$\{(\w+)(?::-([^}]*))?\}")
 
 
 def expand_path_placeholders(value: str) -> str:
-    """Expand ``$VAR`` and ``${VAR}`` placeholders in path-like config values."""
+    """Expand env placeholders in path-like config values.
+
+    Supports ``$VAR``, ``${VAR}``, and ``${VAR:-default}`` forms. Expansion is
+    applied repeatedly so defaults can themselves contain other placeholders.
+    """
 
     def _replace(match: re.Match[str]) -> str:
-        var_name = match.group(1) or match.group(2) or ""
-        return os.environ.get(var_name, match.group(0))
+        simple_var = match.group(1)
+        braced_var = match.group(2)
+        default_value = match.group(3)
+        var_name = simple_var or braced_var or ""
+        if var_name in os.environ:
+            return os.environ[var_name]
+        if default_value is not None:
+            return default_value
+        return match.group(0)
 
-    expanded = _PATH_VAR_PATTERN.sub(_replace, value)
+    expanded = value
+    for _ in range(10):
+        next_value = _PATH_VAR_PATTERN.sub(_replace, expanded)
+        if next_value == expanded:
+            break
+        expanded = next_value
     return os.path.expanduser(expanded)
 
 

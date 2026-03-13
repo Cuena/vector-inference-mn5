@@ -1,6 +1,7 @@
 """Tests for the utility functions in the vec-inf client."""
 
 import os
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -156,6 +157,24 @@ def test_load_config_default_only():
         max_len = model.vllm_args.get("--max-model-len")
         if max_len is not None:
             assert max_len == 40960
+
+
+def test_load_config_mn5_profile_includes_lightweight_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The MN5 profile should expose the wizard's lightweight smoke-test model."""
+    mn5_config_dir = (
+        Path(__file__).resolve().parents[3] / "vec_inf" / "config" / "marenostrum5"
+    )
+
+    with monkeypatch.context() as m:
+        m.setenv("VEC_INF_CONFIG_DIR", str(mn5_config_dir))
+        configs = load_config()
+
+    config_map = {model.model_name: model for model in configs}
+    assert "Llama-3.2-3B-Instruct" in config_map
+    assert config_map["Llama-3.2-3B-Instruct"].gpus_per_node == 1
+    assert config_map["Llama-3.2-3B-Instruct"].num_nodes == 1
 
 
 def test_load_config_with_user_override(tmp_path, monkeypatch):

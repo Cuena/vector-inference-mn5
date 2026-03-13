@@ -1,7 +1,8 @@
 # MN5 model catalog.
 # When VEC_INF_CONFIG_DIR points to vec_inf/config/marenostrum5,
 # this file is used as the active models source.
-# Set VEC_INF_STORAGE_USER when your storage owner differs from your login user.
+# Set VEC_INF_STORAGE_USER when the directory name used under
+# /gpfs/.../users/<name>/... differs from REMOTE_USER.
 # `@repo/...` entries are resolved against this checkout automatically.
 
 models:
@@ -70,6 +71,13 @@ models:
       --tensor-parallel-size: 1
       --pipeline-parallel-size: 1
       --max-model-len: 40960
+  Llama-3.2-3B-Instruct:
+    model_family: Llama-3.2
+    model_variant: 3B-Instruct
+    model_type: LLM
+    num_nodes: 1
+    gpus_per_node: 1
+    vocab_size: 128256
   Kimi-K2-Thinking:
     model_family: Kimi
     model_variant: K2-Thinking
