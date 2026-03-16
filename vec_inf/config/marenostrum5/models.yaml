@@ -297,6 +297,7 @@ models:
     gpus_per_node: 4
     num_nodes: 1
     vocab_size: 201088
+    bind: "/gpfs/scratch/bsc70/hpai/storage/users/$VEC_INF_STORAGE_USER/,/home/bsc/$USER"
     env:
       TIKTOKEN_RS_CACHE_DIR: "/home/bsc/$USER/openai_tokenizer"
       VLLM_CACHE_ROOT: "/gpfs/scratch/bsc70/hpai/storage/users/$VEC_INF_STORAGE_USER/.cache/vllm"
