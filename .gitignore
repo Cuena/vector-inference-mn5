@@ -148,6 +148,7 @@ local/
 slurm/
 # scripts/
 scripts/.launch.env
+scripts/.tunnel-sessions/
 
 # vLLM bug reporting files
 collect_env.py
