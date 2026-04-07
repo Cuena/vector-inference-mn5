@@ -23,7 +23,7 @@ def test_build_defaults_uses_repo_name_and_storage_user() -> None:
     )
     assert (
         defaults["VEC_INF_VLLM_IMAGE_PATH"]
-        == "/gpfs/scratch/bsc70/singularity/vllm_openai_latest.sif"
+        == "/gpfs/scratch/bsc70/singularity/vllm_openai_0.18.0.sif"
     )
     assert defaults["MODEL_NAME"] == DEFAULT_LIGHTWEIGHT_MODEL
 

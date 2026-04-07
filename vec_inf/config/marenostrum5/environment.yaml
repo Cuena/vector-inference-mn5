@@ -1,9 +1,9 @@
 paths:
   # The setup wizard populates these through scripts/.launch.env. They still
   # accept direct edits when you want to bypass the wizard.
-  image_path: "${VEC_INF_VLLM_IMAGE_PATH:-/gpfs/scratch/bsc70/hpai/storage/users/$VEC_INF_STORAGE_USER/singularity/vllm_$VEC_INF_STORAGE_USER.sif}"
-  vllm_image_path: "${VEC_INF_VLLM_IMAGE_PATH:-/gpfs/scratch/bsc70/hpai/storage/users/$VEC_INF_STORAGE_USER/singularity/vllm_$VEC_INF_STORAGE_USER.sif}"
-  sglang_image_path: "${VEC_INF_VLLM_IMAGE_PATH:-/gpfs/scratch/bsc70/hpai/storage/users/$VEC_INF_STORAGE_USER/singularity/vllm_$VEC_INF_STORAGE_USER.sif}"
+  image_path: "${VEC_INF_VLLM_IMAGE_PATH:-/gpfs/scratch/bsc70/singularity/vllm_openai_0.18.0.sif}"
+  vllm_image_path: "${VEC_INF_VLLM_IMAGE_PATH:-/gpfs/scratch/bsc70/singularity/vllm_openai_0.18.0.sif}"
+  sglang_image_path: "${VEC_INF_VLLM_IMAGE_PATH:-/gpfs/scratch/bsc70/singularity/vllm_openai_0.18.0.sif}"
   cached_model_config_path: "${VEC_INF_CACHED_MODEL_CONFIG_PATH:-/path/to/vec-inf-shared/models.yaml}"
 
 containerization:
@@ -45,4 +45,4 @@ default_args:
   log_dir: "~/.vec-inf-logs"
   # Parent directory that contains model folders such as Qwen3.5-27B/.
   model_weights_parent_dir: "${VEC_INF_MODEL_WEIGHTS_PARENT_DIR:-/gpfs/scratch/bsc70/hpai/storage/projects/heka/models}"
-  work_dir: "/home/bsc/$USER/vec-inf-work"
+  work_dir: "/gpfs/scratch/bsc70/users/$USER/vec-inf-work"

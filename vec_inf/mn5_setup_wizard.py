@@ -25,7 +25,7 @@ DEFAULT_REMOTE_ACCOUNT = "bsc70"
 DEFAULT_LOCAL_PORT = "5678"
 DEFAULT_UV_SYNC_ARGS = "--frozen"
 DEFAULT_LIGHTWEIGHT_MODEL = "Llama-3.2-3B-Instruct"
-DEFAULT_VLLM_IMAGE_PATH = "/gpfs/scratch/bsc70/singularity/vllm_openai_latest.sif"
+DEFAULT_VLLM_IMAGE_PATH = "/gpfs/scratch/bsc70/singularity/vllm_openai_0.18.0.sif"
 DEFAULT_MODEL_WEIGHTS_PARENT_DIR = (
     "/gpfs/scratch/bsc70/hpai/storage/projects/heka/models"
 )
@@ -97,6 +97,7 @@ def build_defaults(
     repo_dir_name = repo_name or REPO_ROOT.name
     rsync_dest = f"/home/bsc/{remote_user}/repos/{repo_dir_name}"
     config_dir = f"{rsync_dest}/vec_inf/config/marenostrum5"
+    remote_work_dir = f"/gpfs/scratch/bsc70/users/{remote_user}/vec-inf-work"
     return {
         "REMOTE_LAUNCH_HOST": DEFAULT_REMOTE_LAUNCH_HOST,
         "REMOTE_TRANSFER_HOST": DEFAULT_REMOTE_TRANSFER_HOST,
@@ -111,7 +112,7 @@ def build_defaults(
         "RSYNC_DEST": rsync_dest,
         "VEC_INF_ENV": f"{rsync_dest}/.venv",
         "VEC_INF_CONFIG_DIR_REMOTE": config_dir,
-        "REMOTE_WORK_DIR": rsync_dest,
+        "REMOTE_WORK_DIR": remote_work_dir,
         "REMOTE_ACCOUNT": DEFAULT_REMOTE_ACCOUNT,
         "REMOTE_QOS": "",
         "UV_SYNC_ARGS": DEFAULT_UV_SYNC_ARGS,
@@ -382,7 +383,9 @@ def prompt_for_config(console: Console, existing: dict[str, str]) -> WizardConfi
         "Default vLLM image",
         defaults["VEC_INF_VLLM_IMAGE_PATH"],
         "Container image used by the MN5 profile for most launches. "
-        "Change this only if your team uses a different shared or user-owned SIF.",
+        "Set this to an existing SIF on MN5. If you build a fresh image for "
+        "gpt-oss, the current upstream Docker tag is "
+        "vllm/vllm-openai:v0.18.1-cu130.",
     )
     merged["VEC_INF_MODEL_WEIGHTS_PARENT_DIR"] = prompt_with_help(
         console,
