@@ -9,6 +9,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import MutableMapping, Optional
 
+from rich.console import Group
+from rich.syntax import Syntax
+from rich.table import Table
+from rich.text import Text
+
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parents[0]
 LAUNCH_ENV_PATH = SCRIPT_DIR / ".launch.env"
@@ -88,13 +93,10 @@ from textual.events import Resize
 from textual.screen import Screen
 from textual.widgets import (
     Button,
-    Footer,
-    Header,
     Input,
     Label,
     ListItem,
     ListView,
-    Markdown,
     Static,
 )
 
@@ -115,6 +117,17 @@ class LaunchRequest:
     launch_only: bool
 
 
+@dataclass(frozen=True)
+class EffectiveLaunchSettings:
+    remote_launch_host: str | None
+    config_dir_remote: str | None
+    rsync_dest: str | None
+    vec_inf_env: str | None
+    remote_work_dir: str | None
+    remote_account: str | None
+    remote_qos: str | None
+
+
 class ConfirmScreen(Screen[Optional[LaunchRequest]]):
     BINDINGS = [
         ("y", "confirm", "Launch & tunnel"),
@@ -128,10 +141,10 @@ class ConfirmScreen(Screen[Optional[LaunchRequest]]):
         self.model = model
 
     def compose(self) -> ComposeResult:
-        summary = format_confirm_markdown(self.model.config)
+        summary = format_confirm_summary(self.model.config)
         yield Container(
             Static(f"Launch {self.model.name}?", id="confirm-title"),
-            Markdown(summary, id="confirm-summary"),
+            Static(summary, id="confirm-summary"),
             Horizontal(
                 Button("Launch & tunnel", id="confirm-yes", variant="success"),
                 Button("Launch only", id="confirm-launch-only", variant="primary"),
@@ -162,39 +175,44 @@ class ConfirmScreen(Screen[Optional[LaunchRequest]]):
 class LaunchTui(App[Optional[LaunchRequest]]):
     TITLE = "Vector Inference Launcher"
     SUB_TITLE = "Select a model, then launch (with or without tunnel)"
-    COMPACT_WIDTH = 118
-    COMPACT_HEIGHT = 33
+    COMPACT_WIDTH = 94
+    COMPACT_HEIGHT = 0
 
     CSS = """
     Screen {
+        background: $background;
+    }
+
+    #topbar {
+        margin: 0 1 1 1;
+        padding: 0 1;
+        height: auto;
+        border: round $panel;
         background: $surface;
     }
 
-    #status {
-        border: round $panel;
-        background: $panel 60%;
-        color: $text 85%;
-        padding: 0 1;
-        margin: 0 1;
-        height: auto;
+    #topbar-status {
+        color: $text 75%;
+        padding: 0;
     }
 
     #main {
         height: 1fr;
-        margin: 0 1;
+        margin: 0 1 1 1;
         layout: horizontal;
     }
 
     .panel {
-        border: round $panel;
-        background: $panel;
+        border: none;
+        background: $surface 90%;
         height: 1fr;
-        padding: 0;
+        padding: 0 1 1 1;
     }
 
     #left-pane {
-        width: 40%;
-        min-width: 24;
+        width: 34%;
+        min-width: 30;
+        max-width: 42;
         margin-right: 1;
     }
 
@@ -202,19 +220,10 @@ class LaunchTui(App[Optional[LaunchRequest]]):
         width: 1fr;
     }
 
-    #models-title,
-    #details-title {
-        height: 1;
-        padding: 0;
-        background: $primary 25%;
-        color: $text;
-        text-style: bold;
-    }
-
     #filter {
-        margin: 0;
-        background: $surface;
-        border: round $primary 40%;
+        margin: 0 0 1 0;
+        background: $background 20%;
+        border: round $panel;
     }
 
     #filter:focus {
@@ -224,25 +233,26 @@ class LaunchTui(App[Optional[LaunchRequest]]):
     #model-list {
         margin: 0;
         height: 1fr;
-        background: $surface 40%;
-        border: round $panel;
+        background: $background 15%;
+        border: none;
     }
 
     #details-scroll {
         margin: 0;
         height: 1fr;
-        background: $surface 35%;
-        border: round $panel;
+        background: $background 15%;
+        border: none;
         padding: 0;
     }
 
     #details {
         margin: 0;
+        padding: 1;
     }
 
     .model-row {
         height: 1;
-        padding: 0;
+        padding: 0 1;
         align: left middle;
     }
 
@@ -251,30 +261,14 @@ class LaunchTui(App[Optional[LaunchRequest]]):
         text-overflow: ellipsis;
     }
 
-    .badges {
-        width: auto;
-        height: 1;
-        align: right middle;
+    .model-meta {
+        width: 8;
+        color: $text 60%;
+        text-align: right;
     }
 
-    .badge {
-        border: none;
-        background: $surface 60%;
-        color: $text 90%;
-        min-width: 7;
-        text-align: center;
-        padding: 0 1;
-        margin-left: 0;
-        height: 1;
-        text-style: bold;
-    }
-
-    .badge-node {
-        background: $primary 20%;
-    }
-
-    .badge-gpu {
-        background: $secondary 35%;
+    ListItem {
+        padding: 0;
     }
 
     ScrollBar {
@@ -312,26 +306,30 @@ class LaunchTui(App[Optional[LaunchRequest]]):
 
 
     ListView:focus ListItem.--highlight {
-        background: $primary 40%;
+        background: $primary 22%;
     }
 
     ListItem.--highlight {
-        background: $primary 20%;
+        background: $primary 18%;
     }
 
     ListItem.--highlight .model-name {
         text-style: bold;
     }
 
+    ListItem.--highlight .model-meta {
+        color: $text 85%;
+    }
+
     #confirm-dialog {
         border: round $panel;
-        background: $panel;
+        background: $surface;
         width: 1fr;
-        max-width: 96;
+        max-width: 80;
         min-width: 40;
         max-height: 80%;
         height: auto;
-        padding: 1 1;
+        padding: 1 2;
         align: center middle;
     }
 
@@ -349,16 +347,11 @@ class LaunchTui(App[Optional[LaunchRequest]]):
         align: right middle;
     }
 
-    Screen.compact #status {
-        display: none;
-    }
-
-    Screen.compact Header {
-        display: none;
-    }
-
-    Screen.compact Footer {
-        display: none;
+    Screen.compact #topbar {
+        margin: 0;
+        border-left: none;
+        border-right: none;
+        border-top: none;
     }
 
     Screen.compact #main {
@@ -367,8 +360,7 @@ class LaunchTui(App[Optional[LaunchRequest]]):
     }
 
     Screen.compact .panel {
-        padding: 0 0;
-        border: round $panel;
+        padding: 0 1 1 1;
     }
 
     Screen.compact #left-pane,
@@ -379,20 +371,29 @@ class LaunchTui(App[Optional[LaunchRequest]]):
 
     Screen.compact #left-pane {
         margin-right: 0;
-        margin-bottom: 0;
+        margin-bottom: 1;
+        height: 10;
+        min-height: 10;
     }
 
-    Screen.compact .badges {
-        display: none;
+    Screen.compact #right-pane {
+        height: 1fr;
     }
 
     Screen.compact #filter {
-        margin: 0 0 0 0;
+        margin: 0 0 1 0;
     }
 
-    Screen.compact #model-list,
+    Screen.compact #model-list {
+        margin: 0;
+    }
+
     Screen.compact #details-scroll {
         margin: 0;
+    }
+
+    Screen.compact .model-meta {
+        width: 8;
     }
 
     Screen.compact #confirm-dialog {
@@ -405,39 +406,38 @@ class LaunchTui(App[Optional[LaunchRequest]]):
     BINDINGS = [
         ("enter", "confirm", "Launch"),
         ("/", "focus_filter", "Filter"),
-        ("tab", "focus_list", "List"),
-        ("shift+tab", "focus_filter", "Filter"),
-        ("d", "focus_details", "Details"),
+        ("tab", "cycle_focus", "Next pane"),
+        ("shift+tab", "cycle_focus_reverse", "Prev pane"),
+        ("t", "toggle_theme", "Theme"),
         ("r", "reload", "Reload"),
         ("q", "quit", "Quit"),
     ]
 
     def __init__(self) -> None:
         super().__init__()
-        self.theme = "dracula"
+        self.theme = "textual-dark"
         self._models: list[ModelEntry] = []
         self._filtered: list[ModelEntry] = []
         self._last_launched_model: str | None = None
+        self._launch_settings = resolve_effective_launch_settings()
 
     def compose(self) -> ComposeResult:
-        yield Header(show_clock=False)
-        yield Static(build_status_line(), id="status", markup=True)
+        with Vertical(id="topbar"):
+            yield Static(build_status_line(), id="topbar-status", markup=True)
         with Container(id="main"):
             with Vertical(id="left-pane", classes="panel"):
-                yield Static("Models", id="models-title")
                 yield Input(
-                    placeholder="Type to filter models…  (Tab: list, Enter: launch)",
+                    placeholder="Filter models",
                     id="filter",
                 )
                 yield ListView(id="model-list")
             with Vertical(id="right-pane", classes="panel"):
-                yield Static("Details", id="details-title")
                 with VerticalScroll(id="details-scroll"):
-                    yield Markdown("", id="details")
-        yield Footer()
+                    yield Static("", id="details")
 
     def on_mount(self) -> None:
         self._sync_layout()
+        self._launch_settings = resolve_effective_launch_settings()
         self.load_models()
         self._last_launched_model = load_last_launched_model()
         self.populate_list(
@@ -455,8 +455,9 @@ class LaunchTui(App[Optional[LaunchRequest]]):
 
     def _sync_layout(self) -> None:
         size = self.size
-        compact = size.width < self.COMPACT_WIDTH or size.height < self.COMPACT_HEIGHT
+        compact = size.width < self.COMPACT_WIDTH
         self.screen.set_class(compact, "compact")
+        self.query_one("#topbar-status", Static).update(build_status_line(compact=compact))
 
     def load_models(self) -> None:
         configs = load_config()
@@ -485,29 +486,25 @@ class LaunchTui(App[Optional[LaunchRequest]]):
             self.update_details(self._filtered[selected_index])
         else:
             list_view.index = None
-            self.query_one("#details", Markdown).update(
-                "_No models match the current filter._"
+            self.query_one("#details", Static).update(
+                Text("No models match the current filter.", style="dim")
             )
 
     def _make_model_item(self, model: ModelEntry) -> ListItem:
-        node_count = model.config.num_nodes
-        gpu_count = model.config.gpus_per_node
-        node_label = f"{node_count} node" if node_count == 1 else f"{node_count} nodes"
-        gpu_label = f"{gpu_count} GPU" if gpu_count == 1 else f"{gpu_count} GPUs"
         row = Horizontal(
             Label(model.name, classes="model-name"),
-            Horizontal(
-                Static(node_label, classes="badge badge-node"),
-                Static(gpu_label, classes="badge badge-gpu"),
-                classes="badges",
-            ),
+            Static(format_model_resources(model.config), classes="model-meta"),
             classes="model-row",
         )
         return ListItem(row)
 
     def update_details(self, model: ModelEntry) -> None:
-        details = format_details(model.config)
-        self.query_one("#details", Markdown).update(details)
+        details = format_details(
+            model.config,
+            dark_mode=self.current_theme.dark,
+            launch_settings=self._launch_settings,
+        )
+        self.query_one("#details", Static).update(details)
 
     def get_selected_model(self) -> Optional[ModelEntry]:
         list_view = self.query_one(ListView)
@@ -549,11 +546,40 @@ class LaunchTui(App[Optional[LaunchRequest]]):
     def action_focus_details(self) -> None:
         self.query_one("#details-scroll", VerticalScroll).focus()
 
+    def action_cycle_focus(self) -> None:
+        focused = self.focused
+        if isinstance(focused, Input):
+            self.action_focus_list()
+            return
+        if isinstance(focused, ListView):
+            self.action_focus_details()
+            return
+        self.action_focus_list()
+
+    def action_cycle_focus_reverse(self) -> None:
+        focused = self.focused
+        if isinstance(focused, VerticalScroll):
+            self.action_focus_list()
+            return
+        if isinstance(focused, ListView):
+            self.action_focus_filter()
+            return
+        self.action_focus_details()
+
     def action_reload(self) -> None:
+        self._launch_settings = resolve_effective_launch_settings()
         self.load_models()
         self.populate_list(
             preferred_model=resolve_preferred_model_name(self._last_launched_model)
         )
+
+    def action_toggle_theme(self) -> None:
+        self.theme = (
+            "textual-light" if self.theme == "textual-dark" else "textual-dark"
+        )
+        model = self.get_selected_model()
+        if model is not None:
+            self.update_details(model)
 
     def action_confirm(self) -> None:
         model = self.get_selected_model()
@@ -568,13 +594,19 @@ class LaunchTui(App[Optional[LaunchRequest]]):
             self.exit(request)
 
 
-def build_status_line() -> str:
-    config_hint = resolve_model_config_path()
-    env_status = "[green]found[/green]" if LAUNCH_ENV_PATH.exists() else "[red]missing[/red]"
+def build_status_line(compact: bool = False) -> str:
+    config_hint = _short_path_hint(resolve_model_config_path())
+    env_status = "[green]ready[/green]" if LAUNCH_ENV_PATH.exists() else "[red]missing[/red]"
+    if compact:
+        return (
+            f"[b]Config[/b] {config_hint}  [dim]•[/dim]  "
+            f"[b]Env[/b] {env_status}  [dim]•[/dim]  "
+            "[b]/[/b] filter  [dim]•[/dim]  [b]Tab[/b] panes  [dim]•[/dim]  [b]t[/b] theme  [dim]•[/dim]  [b]Enter[/b] launch"
+        )
     return (
-        f"[b]Config[/b]: {config_hint}  |  "
-        f"[b]scripts/.launch.env[/b]: {env_status}  |  "
-        "[b]Keys[/b]: / filter, Tab list, Enter launch, q quit"
+        f"[b]Config[/b] {config_hint}  [dim]•[/dim]  "
+        f"[b]Env[/b] {env_status}  [dim]•[/dim]  "
+        "[b]Keys[/b] / filter, Tab panes, t theme, Enter launch, q quit"
     )
 
 
@@ -600,10 +632,7 @@ def save_last_launched_model(model_name: str) -> None:
 
 def _tui_state_path() -> Path:
     state_dir = os.getenv("XDG_STATE_HOME")
-    if state_dir:
-        base_dir = Path(state_dir)
-    else:
-        base_dir = Path.home() / ".local" / "state"
+    base_dir = Path(state_dir) if state_dir else Path.home() / ".local" / "state"
     return base_dir / "vector-inference" / "last_tui_model.txt"
 
 
@@ -624,86 +653,156 @@ def resolve_model_config_path() -> str:
     return str(default_path)
 
 
-def format_details(config: ModelConfig) -> str:
-    lines: list[str] = []
-    lines.append(f"## `{config.model_name}`")
-    lines.append("")
+def resolve_effective_launch_settings(
+    environ: MutableMapping[str, str] | None = None,
+) -> EffectiveLaunchSettings:
+    """Resolve the effective shell-script launch settings shown in the TUI."""
+    values = environ if environ is not None else os.environ
 
-    lines.append("### Model")
-    lines.append(f"**Type**: `{config.model_type}`")
-    lines.append(f"**Family**: `{config.model_family}`")
-    if config.model_variant:
-        lines.append(f"**Variant**: `{config.model_variant}`")
-    if config.engine:
-        lines.append(f"**Engine**: `{config.engine}`")
+    remote_user = values.get("REMOTE_USER", "").strip()
+    rsync_dest = values.get("RSYNC_DEST", "").strip()
+    if not rsync_dest and remote_user:
+        rsync_dest = f"/home/bsc/{remote_user}/repos/vector-inference"
 
-    lines.append("")
-    lines.append("### Job")
-    lines.append(
-        f"**Resources**: `{config.num_nodes} node(s)`, `{config.gpus_per_node} GPU(s)/node`, `{config.cpus_per_task} CPU(s)/task`"
+    vec_inf_env = values.get("VEC_INF_ENV", "").strip()
+    if not vec_inf_env and rsync_dest:
+        vec_inf_env = f"{rsync_dest}/.venv"
+
+    remote_work_dir = values.get("REMOTE_WORK_DIR", "").strip()
+    if remote_work_dir == "RSYNC_DEST":
+        remote_work_dir = rsync_dest
+
+    remote_qos = values.get("REMOTE_QOS", "").strip()
+    if remote_qos == "NONE":
+        remote_qos = ""
+
+    remote_launch_host = values.get("REMOTE_LAUNCH_HOST", "").strip() or None
+    config_dir_remote = values.get("VEC_INF_CONFIG_DIR_REMOTE", "").strip()
+    remote_account = values.get("REMOTE_ACCOUNT", "").strip() or None
+
+    return EffectiveLaunchSettings(
+        remote_launch_host=remote_launch_host,
+        config_dir_remote=(
+            None
+            if not config_dir_remote or config_dir_remote == "NONE"
+            else config_dir_remote
+        ),
+        rsync_dest=rsync_dest or None,
+        vec_inf_env=vec_inf_env or None,
+        remote_work_dir=remote_work_dir or None,
+        remote_account=remote_account,
+        remote_qos=remote_qos or None,
     )
-    if config.mem_per_node:
-        lines.append(f"**Memory per node**: `{config.mem_per_node}`")
-    if config.partition:
-        lines.append(f"**Partition**: `{config.partition}`")
-    if config.qos:
-        lines.append(f"**QOS**: `{config.qos}`")
-    lines.append(f"**Time**: `{config.time}`")
 
-    lines.append("")
-    lines.append("### Paths")
-    lines.append("```text")
-    lines.append(f"Venv: {config.venv}")
-    lines.append(f"Log dir: {config.log_dir}")
-    lines.append(f"Weights dir: {config.model_weights_parent_dir}")
+
+def format_details(
+    config: ModelConfig,
+    dark_mode: bool,
+    launch_settings: EffectiveLaunchSettings | None = None,
+) -> Group:
+    blocks: list[object] = []
+
+    title = Text(config.model_name, style="bold")
+    subtitle = Text()
+    subtitle.append(config.model_type, style="bold")
+    subtitle.append("  •  ", style="dim")
+    subtitle.append(config.model_family, style="dim")
+    if config.model_variant:
+        subtitle.append("  •  ", style="dim")
+        subtitle.append(str(config.model_variant), style="dim")
+    if config.engine:
+        subtitle.append("  •  ", style="dim")
+        subtitle.append(str(config.engine), style="dim")
+
+    job_rows = [
+        (
+            "Resources",
+            (
+                f"{config.num_nodes} node(s), {config.gpus_per_node} GPU(s)/node, "
+                f"{config.cpus_per_task} CPU(s)/task"
+            ),
+        ),
+        ("Time", config.time),
+    ]
+    if config.mem_per_node:
+        job_rows.append(("Memory", config.mem_per_node))
+    if config.partition:
+        job_rows.append(("Partition", config.partition))
+    if config.qos:
+        job_rows.append(("QOS", config.qos))
+
+    path_rows = [
+        ("Venv", config.venv),
+        ("Log dir", config.log_dir),
+        ("Weights", config.model_weights_parent_dir),
+    ]
     if config.work_dir:
-        lines.append(f"Work dir: {config.work_dir}")
-    lines.append("```")
+        path_rows.append(("Work dir", config.work_dir))
+
+    blocks.extend(
+        [
+            title,
+            subtitle,
+            Text(""),
+            _detail_table("Job", job_rows),
+        ]
+    )
+
+    if launch_settings is not None:
+        blocks.extend(
+            [
+                Text(""),
+                _detail_table(
+                    "Launch",
+                    [
+                        ("Host", launch_settings.remote_launch_host or "-"),
+                        ("Config dir", launch_settings.config_dir_remote or "-"),
+                        ("Remote env", launch_settings.vec_inf_env or "-"),
+                        ("Job work dir", _effective_work_dir(config, launch_settings)),
+                        ("Account", _effective_account(config, launch_settings)),
+                        ("QOS", _effective_qos(config, launch_settings)),
+                    ],
+                ),
+            ]
+        )
 
     if config.vllm_args:
-        lines.append("")
-        lines.append("### vLLM args")
-        lines.append("```yaml")
-        lines.extend(_yaml_lines(config.vllm_args))
-        lines.append("```")
+        blocks.extend([Text(""), _yaml_block("vLLM args", config.vllm_args, dark_mode)])
 
     if config.sglang_args:
-        lines.append("")
-        lines.append("### SGLang args")
-        lines.append("```yaml")
-        lines.extend(_yaml_lines(config.sglang_args))
-        lines.append("```")
+        blocks.extend(
+            [Text(""), _yaml_block("SGLang args", config.sglang_args, dark_mode)]
+        )
 
     if config.env:
-        lines.append("")
-        lines.append("### Environment")
-        lines.append("```yaml")
-        lines.extend(_yaml_lines(config.env))
-        lines.append("```")
+        blocks.extend([Text(""), _yaml_block("Environment", config.env, dark_mode)])
 
-    return "\n".join(lines)
+    blocks.extend([Text(""), _detail_table("Paths", path_rows)])
+
+    return Group(*blocks)
 
 
-def format_confirm_markdown(config: ModelConfig) -> str:
-    lines: list[str] = []
-    lines.append("### Summary")
-    lines.append(f"- **Type**: `{config.model_type}`")
+def format_confirm_summary(config: ModelConfig) -> Group:
+    settings = resolve_effective_launch_settings()
+    rows: list[tuple[str, str]] = [
+        ("Type", config.model_type),
+    ]
     if config.engine:
-        lines.append(f"- **Engine**: `{config.engine}`")
-    lines.append(
-        f"- **Resources**: `{config.num_nodes} node(s)`, `{config.gpus_per_node} GPU(s)/node`"
-    )
+        rows.append(("Engine", str(config.engine)))
+    rows.append(("Resources", f"{config.num_nodes} node(s), {config.gpus_per_node} GPU(s)/node"))
+    rows.append(("Remote env", settings.vec_inf_env or "-"))
+    rows.append(("Job work dir", _effective_work_dir(config, settings)))
+    rows.append(("Account", _effective_account(config, settings)))
+    rows.append(("QOS", _effective_qos(config, settings)))
     if config.partition or config.qos:
-        parts: list[str] = []
-        if config.partition:
-            parts.append(str(config.partition))
-        if config.qos:
-            parts.append(str(config.qos))
-        lines.append(f"- **Slurm**: `{', '.join(parts)}`")
-    lines.append(f"- **Time**: `{config.time}`")
-    lines.append("")
-    lines.append("Press **Launch** to continue, or **Cancel**.")
-    return "\n".join(lines)
+        parts = [p for p in (config.partition, config.qos) if p]
+        rows.append(("Slurm", ", ".join(str(p) for p in parts)))
+    rows.append(("Time", config.time))
+    return Group(
+        _detail_table("Summary", rows),
+        Text(""),
+        Text("Press Launch to continue, or Cancel.", style="dim"),
+    )
 
 
 def _yaml_lines(values: dict[str, object]) -> list[str]:
@@ -717,6 +816,66 @@ def _yaml_lines(values: dict[str, object]) -> list[str]:
         else:
             lines.append(f"{key}: {_yaml_scalar(value)}")
     return lines
+
+
+def format_model_resources(config: ModelConfig) -> str:
+    return f"{config.num_nodes:>2}n  {config.gpus_per_node:>2}g"
+
+
+def _effective_work_dir(
+    config: ModelConfig,
+    launch_settings: EffectiveLaunchSettings,
+) -> str:
+    return launch_settings.remote_work_dir or str(config.work_dir or "-")
+
+
+def _effective_account(
+    config: ModelConfig,
+    launch_settings: EffectiveLaunchSettings,
+) -> str:
+    if launch_settings.remote_account:
+        return launch_settings.remote_account
+    if config.account:
+        return str(config.account)
+    return "$VEC_INF_ACCOUNT (remote)"
+
+
+def _effective_qos(
+    config: ModelConfig,
+    launch_settings: EffectiveLaunchSettings,
+) -> str:
+    return launch_settings.remote_qos or str(config.qos or "-")
+
+
+def _detail_table(title: str, rows: list[tuple[str, object]]) -> Group:
+    heading = Text(title, style="bold")
+    table = Table.grid(padding=(0, 2), expand=False)
+    table.add_column(style="dim", width=10, no_wrap=True)
+    table.add_column(overflow="fold")
+    for label, value in rows:
+        table.add_row(label, str(value))
+    return Group(heading, table)
+
+
+def _yaml_block(title: str, values: dict[str, object], dark_mode: bool) -> Group:
+    syntax = Syntax(
+        "\n".join(_yaml_lines(values)),
+        "yaml",
+        theme="ansi_dark" if dark_mode else "ansi_light",
+        line_numbers=False,
+        word_wrap=True,
+    )
+    return Group(Text(title, style="bold"), syntax)
+
+
+def _short_path_hint(path_str: str) -> str:
+    path = Path(path_str)
+    if path.is_absolute():
+        try:
+            return str(path.relative_to(REPO_ROOT))
+        except ValueError:
+            return path.name
+    return path_str
 
 
 def _yaml_scalar(value: object) -> str:
