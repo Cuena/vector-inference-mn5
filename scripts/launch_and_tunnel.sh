@@ -11,6 +11,7 @@
 set -euo pipefail
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)
+SESSION_STATE_DIR="${SCRIPT_DIR}/.tunnel-sessions"
 
 show_help() {
     cat <<'EOF'
@@ -228,6 +229,7 @@ REMOTE_LOG_DIR=""
 REMOTE_JSON_PATH=""
 REMOTE_ERR_PATH=""
 REMOTE_JOB_DIR=""
+SESSION_STATE_PATH=""
 
 # Ensure the chosen LOCAL_PORT is free. Safe-by-default: do NOT kill unless
 # AUTO_KILL_STALE_TUNNEL=1 is set. When killing, only target ssh -L listeners
@@ -332,6 +334,9 @@ ensure_local_port_free() {
 }
 
 cleanup() {
+    if [ -n "${SESSION_STATE_PATH:-}" ]; then
+        rm -f "${SESSION_STATE_PATH}" 2>/dev/null || true
+    fi
     if [ "${CANCEL_JOB:-1}" = "1" ] && [ -n "${JOB_ID:-}" ]; then
         echo ""
         echo "--> Cancelling remote SLURM job ${JOB_ID}..."
@@ -427,6 +432,74 @@ abort_if_job_ended() {
     esac
 }
 
+write_session_state() {
+    if [ "${LAUNCH_ONLY}" = "1" ] || [ -z "${JOB_ID:-}" ] || [ -z "${LOCAL_PORT:-}" ]; then
+        return 0
+    fi
+
+    mkdir -p "${SESSION_STATE_DIR}"
+    SESSION_STATE_PATH="${SESSION_STATE_DIR}/${JOB_ID}.json"
+
+    JOB_ID="${JOB_ID}" \
+    MODEL_NAME="${MODEL_NAME}" \
+    LOCAL_PORT="${LOCAL_PORT}" \
+    SERVER_IP="${SERVER_IP:-}" \
+    SERVER_PORT="${SERVER_PORT:-}" \
+    SERVER_HOST_LABEL="${SERVER_HOST_LABEL:-}" \
+    REMOTE_SSH_TARGET="${REMOTE_SSH_TARGET}" \
+    REMOTE_LAUNCH_HOST="${REMOTE_LAUNCH_HOST}" \
+    REMOTE_JSON_PATH="${REMOTE_JSON_PATH:-}" \
+    REMOTE_ERR_PATH="${REMOTE_ERR_PATH:-}" \
+    REMOTE_JOB_DIR="${REMOTE_JOB_DIR:-}" \
+    OWNER_PID="$$" \
+    python3 - "${SESSION_STATE_PATH}" <<'PY'
+import json
+import os
+import sys
+from datetime import datetime, timezone
+
+
+def optional_int(name: str) -> int | None:
+    value = os.environ.get(name, "")
+    if not value:
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        return None
+
+
+path = sys.argv[1]
+local_port = optional_int("LOCAL_PORT")
+server_port = optional_int("SERVER_PORT")
+owner_pid = optional_int("OWNER_PID")
+
+payload = {
+    "job_id": os.environ.get("JOB_ID", ""),
+    "requested_model_name": os.environ.get("MODEL_NAME", ""),
+    "local_port": local_port,
+    "base_url": (
+        f"http://127.0.0.1:{local_port}/v1" if local_port is not None else None
+    ),
+    "remote_server_host": os.environ.get("SERVER_HOST_LABEL")
+    or os.environ.get("SERVER_IP", ""),
+    "remote_server_ip": os.environ.get("SERVER_IP", ""),
+    "remote_server_port": server_port,
+    "ssh_target": os.environ.get("REMOTE_SSH_TARGET", ""),
+    "remote_launch_host": os.environ.get("REMOTE_LAUNCH_HOST", ""),
+    "remote_json_path": os.environ.get("REMOTE_JSON_PATH", ""),
+    "remote_err_path": os.environ.get("REMOTE_ERR_PATH", ""),
+    "remote_job_dir": os.environ.get("REMOTE_JOB_DIR", ""),
+    "owner_pid": owner_pid,
+    "created_at": datetime.now(timezone.utc).isoformat(),
+}
+
+with open(path, "w", encoding="utf-8") as handle:
+    json.dump(payload, handle, indent=2)
+    handle.write("\n")
+PY
+}
+
 # Check local port availability
 if [ "${LAUNCH_ONLY}" != "1" ]; then
     ensure_local_port_free "${LOCAL_PORT}"
@@ -483,6 +556,11 @@ if [ "${RSYNC_ENABLED}" = "1" ] || [ "${RSYNC_ENABLED}" = "true" ]; then
     echo "--> Syncing code via rsync..."
     rsync -rltDzv --filter=":- .gitignore" --exclude=".git" -e ssh "${RSYNC_SRC%/}/" "${REMOTE_TRANSFER_SSH_TARGET}:${RSYNC_DEST%/}/"
     echo "[OK] rsync complete."
+fi
+
+if [ -n "${REMOTE_WORK_DIR:-}" ]; then
+    echo "--> Ensuring remote work dir exists: ${REMOTE_WORK_DIR}"
+    ssh "${REMOTE_LAUNCH_SSH_TARGET:-${REMOTE_SSH_TARGET}}" "mkdir -p '${REMOTE_WORK_DIR}'" 2>/dev/null || true
 fi
 
 echo "--> Launching $MODEL_NAME on cluster..."
@@ -670,6 +748,7 @@ done
 echo ""
 
 echo "--> Establishing SSH tunnel..."
+write_session_state
 echo ""
 echo "======================================================================"
 echo "  SERVER ACCESSIBLE AT: http://localhost:${LOCAL_PORT}/v1"
@@ -677,6 +756,10 @@ echo "======================================================================"
 echo ""
 echo "Job ID:        $JOB_ID"
 echo "Remote server: ${SERVER_IP}:${SERVER_PORT}"
+echo ""
+echo "Inspect tunnel: ./scripts/tunnel_tool.py show --job-id ${JOB_ID}"
+echo "Tunnel TUI: ./scripts/tunnel_tui.py"
+echo "Validation curls: ./scripts/tunnel_tool.py curls --job-id ${JOB_ID}"
 echo ""
 echo "Press Ctrl+C to close the tunnel and cancel the remote job."
 echo ""

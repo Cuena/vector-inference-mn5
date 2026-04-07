@@ -82,6 +82,10 @@ RSYNC_DEST="${RSYNC_DEST:-}"
 if [ -z "${RSYNC_DEST}" ]; then
     RSYNC_DEST="/home/bsc/${REMOTE_USER}/repos/vector-inference"
 fi
+REMOTE_WORK_DIR="${REMOTE_WORK_DIR:-}"
+if [ "${REMOTE_WORK_DIR}" = "RSYNC_DEST" ]; then
+    REMOTE_WORK_DIR="${RSYNC_DEST}"
+fi
 
 echo "======================================================================"
 echo "  Vector Inference Repo Sync"
@@ -93,6 +97,11 @@ echo ""
 
 echo "--> Preparing remote destination: ${RSYNC_DEST}"
 ssh "${REMOTE_SSH_TARGET}" "mkdir -p '${RSYNC_DEST}'" 2>/dev/null || true
+
+if [ -n "${REMOTE_WORK_DIR:-}" ]; then
+    echo "--> Preparing remote work dir: ${REMOTE_WORK_DIR}"
+    ssh "${REMOTE_SSH_TARGET}" "mkdir -p '${REMOTE_WORK_DIR}'" 2>/dev/null || true
+fi
 
 echo "--> Syncing repo via rsync..."
 rsync -rltDzv --filter=":- .gitignore" --exclude=".git" -e ssh "${RSYNC_SRC%/}/" "${REMOTE_SSH_TARGET}:${RSYNC_DEST%/}/"
