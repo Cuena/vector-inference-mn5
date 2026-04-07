@@ -177,6 +177,26 @@ def test_load_config_mn5_profile_includes_lightweight_model(
     assert config_map["Llama-3.2-3B-Instruct"].num_nodes == 1
 
 
+def test_load_config_mn5_profile_uses_gpt_oss_weights_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The MN5 gpt-oss profile should point at the versioned weights folder."""
+    mn5_config_dir = (
+        Path(__file__).resolve().parents[3] / "vec_inf" / "config" / "marenostrum5"
+    )
+
+    with monkeypatch.context() as m:
+        m.setenv("VEC_INF_CONFIG_DIR", str(mn5_config_dir))
+        configs = load_config()
+
+    config_map = {model.model_name: model for model in configs}
+    assert "gpt-oss-120b-0109" in config_map
+    assert (
+        config_map["gpt-oss-120b-0109"].model_weights_dir_name
+        == "gpt-oss-120b-0109"
+    )
+
+
 def test_load_config_with_user_override(tmp_path, monkeypatch):
     """Test VEC_INF_CONFIG_DIR uses user models.yaml as the source config."""
     # Create user config directory and file

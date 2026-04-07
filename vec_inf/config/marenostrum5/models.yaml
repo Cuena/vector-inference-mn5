@@ -1,5 +1,5 @@
 # Test models
-#  - Qwen3.5-27B-v0.17.0
+#  - Qwen3.5-27B-v0.18.0
 #  - Qwen3-32B
 
 models:
@@ -35,8 +35,10 @@ models:
     gpus_per_node: 4
     num_nodes: 8
     vocab_size: 151552
+    bind: "/home/bsc/$USER"
     vllm_args:
       --distributed-executor-backend: ray
+      --trust-remote-code: true
       --tensor-parallel-size: 32
       --config: "@repo/compilation_configs/glm47.yaml"
   GLM-4.7-Flash:
@@ -46,15 +48,28 @@ models:
     gpus_per_node: 4
     num_nodes: 1
     vocab_size: 154880
+    bind: "/home/bsc/$USER"
     vllm_args:
       --tensor-parallel-size: 4
-      --speculative-config.method: mtp
-      --speculative-config.num_speculative_tokens: 1
-      --max-model-len: 100000
-      --tool-call-parser: glm47
-      --reasoning-parser: glm45
-      --enable-auto-tool-choice: true
-      --enforce-eager: true
+      --trust-remote-code: true
+      --config: "@repo/compilation_configs/glm47_flash_agent.yaml"
+  GLM-4.5-Air-FP8:
+    model_family: GLM-4.5
+    model_variant: Air-FP8
+    model_type: LLM
+    # Source-backed 1-node choice for 4xH100 64GB when you need >=32k context
+    # without falling back to eager mode.
+    gpus_per_node: 4
+    num_nodes: 1
+    vocab_size: 151552
+    vllm_args:
+      --tensor-parallel-size: 4
+      --trust-remote-code: true
+      --max-model-len: 32768
+      --gpu-memory-utilization: 0.75
+      --kv-cache-dtype: fp8_e4m3
+      --enable-chunked-prefill: true
+      --config: "@repo/compilation_configs/glm45_air_fp8_single.yaml"
   InternVL3_5-8B-Instruct:
     model_family: InternVL3_5
     model_variant: 8B-Instruct
@@ -111,7 +126,6 @@ models:
     partition: acc
     account: bsc70
     venv: "singularity"
-    image_path: "/gpfs/scratch/bsc70/hpai/storage/users/$VEC_INF_STORAGE_USER/singularity/vllm_$VEC_INF_STORAGE_USER.sif"
     cuda_compat_shim: true
     cuda_compat_shim_source: "/usr/local/cuda-12.9/compat/lib.real/libcuda.so.1"
     bind: "/gpfs/scratch/bsc70/hpai/storage/users/$VEC_INF_STORAGE_USER/.cache/vllm,/home/bsc/$USER"
@@ -120,7 +134,7 @@ models:
     vllm_args:
       --distributed-executor-backend: ray
       --trust-remote-code: true
-      --max-model-len: 32768
+      --max-model-len: 64000
       --gpu-memory-utilization: 0.8
       --tensor-parallel-size: 16
       --enable-auto-tool-choice: true
@@ -131,18 +145,97 @@ models:
     model_family: MiniMax
     model_variant: M2.1
     model_type: LLM
-    num_nodes: 4
+    # Experimental latency-oriented profile for a single 4xH100 64GB node.
+    # Official MiniMax docs recommend 4x96GB for a comfortable 1-node setup.
+    num_nodes: 1
+    gpus_per_node: 4
     vocab_size: 200064
+    bind: "/home/bsc/$USER"
     vllm_args:
-      --distributed-executor-backend: ray
       --trust-remote-code: true
-      --gpu-memory-utilization: 0.8
-      --tensor-parallel-size: 16
+      --tensor-parallel-size: 4
+      --max-model-len: 16384
+      --gpu-memory-utilization: 0.94
+      --enable-chunked-prefill: true
+      --enable-prefix-caching: true
       --enable-auto-tool-choice: true
       --tool-call-parser: minimax_m2
       --reasoning-parser: minimax_m2_append_think
-      --enforce-eager: true
+      --config: "@repo/compilation_configs/minimax_single.yaml"
+
+  MiniMax-M2.5:
+    model_family: MiniMax
+    model_variant: M2.5
+    model_type: LLM
+    # Single-replica profile for mostly sequential agent calls.
+    # MiniMax's documented vLLM layout is TP=4 on 4 GPUs or TP=8+EP on 8 GPUs.
+    num_nodes: 2
     gpus_per_node: 4
+    vocab_size: 200064
+    bind: "/home/bsc/$USER"
+    env:
+      VLLM_ALLREDUCE_USE_SYMM_MEM: "0"
+    vllm_args:
+      --distributed-executor-backend: ray
+      --trust-remote-code: true
+      --tensor-parallel-size: 8
+      --enable-expert-parallel: true
+      --all2all-backend: allgather_reducescatter
+      --disable-custom-all-reduce: true
+      --max-model-len: 32768
+      --gpu-memory-utilization: 0.85
+      --kv-cache-dtype: fp8_e4m3
+      --enable-chunked-prefill: true
+      --enable-prefix-caching: true
+      --enable-auto-tool-choice: true
+      --tool-call-parser: minimax_m2
+      --reasoning-parser: minimax_m2_append_think
+      --config: "@repo/compilation_configs/minimax_agent.yaml"
+
+  NVIDIA-Nemotron-3-Super-120B-A12B-FP8_venv:
+    model_family: NVIDIA-Nemotron-3
+    model_variant: Super-120B-A12B-FP8
+    model_type: LLM
+    gpus_per_node: 4
+    num_nodes: 1
+    vocab_size: 131072
+    venv: "/gpfs/scratch/bsc70/hpai/storage/users/$VEC_INF_STORAGE_USER/venvs/vllm_latest/.venv"
+    vllm_args:
+      --tensor-parallel-size: 4
+      --trust-remote-code: true
+      --max-model-len: 262144
+      --kv-cache-dtype: fp8
+      --gpu-memory-utilization: 0.9
+      --attention-backend: TRITON_ATTN
+      --enable-chunked-prefill: true
+      --reasoning-parser: nemotron_v3
+      --enable-auto-tool-choice: true
+      --tool-call-parser: qwen3_coder
+      --config: "@repo/compilation_configs/nemotron_single.yaml"
+
+  NVIDIA-Nemotron-3-Super-120B-A12B-FP8:
+    model_family: NVIDIA-Nemotron-3
+    model_variant: Super-120B-A12B-FP8
+    model_type: LLM
+    gpus_per_node: 4
+    num_nodes: 1
+    vocab_size: 131072
+    venv: "singularity"
+    bind: "/home/bsc/$USER"
+    vllm_args:
+      --tensor-parallel-size: 4
+      --trust-remote-code: true
+      --max-model-len: 262144
+      --kv-cache-dtype: fp8
+      --gpu-memory-utilization: 0.9
+      --attention-backend: TRITON_ATTN
+      --enable-chunked-prefill: true
+      --enable-prefix-caching: true
+      --reasoning-parser: nemotron_v3
+      --enable-auto-tool-choice: true
+      --tool-call-parser: qwen3_coder
+      --config: "@repo/compilation_configs/nemotron_multi_seq.yaml"
+
   Qwen3.5-397B-A17B:
     model_family: Qwen3.5
     model_variant: 397B-A17B
@@ -205,7 +298,7 @@ models:
 
       --config: "@repo/compilation_configs/qwen_single_seq.yaml"
 
-  Qwen3.5-27B-v0.17.0:
+  Qwen3.5-27B-v0.18.0:
     model_family: Qwen3.5
     model_variant: 27B
     model_type: LLM
@@ -214,26 +307,39 @@ models:
     vocab_size: 248320
     model_weights_dir_name: Qwen3.5-27B
     venv: "singularity"
-    image_path: "/gpfs/scratch/bsc70/hpai/storage/users/$VEC_INF_STORAGE_USER/singularity/vllm_openai_017.sif"
+    bind: "/home/bsc/$USER"
     # The image preloads the CUDA compat PTX JIT internally.
     cuda_compat_shim: false
+    env:
+      VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS: "1"
+      # /cache is a short in-container bind to ${work_dir}/.vec-inf-cache on
+      # scratch. Keep temp on /tmp so vLLM's local IPC sockets stay short.
+      XDG_CACHE_HOME: "/cache"
+      TMPDIR: "/tmp"
+      TMP: "/tmp"
+      TEMP: "/tmp"
+      TORCHINDUCTOR_CACHE_DIR: "/cache/torchinductor"
+      TRITON_CACHE_DIR: "/cache/triton"
     vllm_args:
       --tensor-parallel-size: 4
-      --max-model-len: 48000
-      --attention-backend: FLASH_ATTN
+      # Agent-oriented profile: trade excess context headroom for faster batching
+      # and higher usable concurrency on a 4xH100 node.
+      --max-model-len: 55000
+      --attention-backend: TRITON_ATTN
       --gpu-memory-utilization: 0.9
-      # vLLM 0.17.0 exposes hybrid-cache controls that are worth testing on
-      # Qwen3.5's long-context path.
+      --kv-cache-dtype: fp8_e4m3
+      --enable-chunked-prefill: true
       --performance-mode: interactivity
       --mamba-cache-mode: align
       --mamba-block-size: 8
+      --speculative-config.method: mtp
+      --speculative-config.num_speculative_tokens: 1
       --enable-prefix-caching: true
-      --disable-log-stats: false
       --reasoning-parser: qwen3
       --language-model-only: true
       --enable-auto-tool-choice: true
       --tool-call-parser: qwen3_coder
-      --config: "@repo/compilation_configs/qwen_single_seq.yaml"
+      --config: "@repo/compilation_configs/qwen_multi_seq.yaml"
 
   Qwen3-30B-A3B-Thinking-2507:
     model_family: Qwen3
@@ -268,7 +374,6 @@ models:
     num_nodes: 1
     vocab_size: 151936
     venv: "singularity"
-    image_path: "/gpfs/scratch/bsc70/hpai/storage/users/$VEC_INF_STORAGE_USER/singularity/vllm_$VEC_INF_STORAGE_USER.sif"
     vllm_args:
       --attention-backend: flashinfer
       --tensor-parallel-size: 4
@@ -297,14 +402,25 @@ models:
     gpus_per_node: 4
     num_nodes: 1
     vocab_size: 201088
+    venv: "singularity"
+    model_weights_dir_name: gpt-oss-120b-0109
     bind: "/gpfs/scratch/bsc70/hpai/storage/users/$VEC_INF_STORAGE_USER/,/home/bsc/$USER"
     env:
       TIKTOKEN_RS_CACHE_DIR: "/home/bsc/$USER/openai_tokenizer"
       VLLM_CACHE_ROOT: "/gpfs/scratch/bsc70/hpai/storage/users/$VEC_INF_STORAGE_USER/.cache/vllm"
+      # Keep torch compile artifacts on scratch-backed /cache instead of $HOME.
+      XDG_CACHE_HOME: "/cache"
+      TMPDIR: "/tmp"
+      TMP: "/tmp"
+      TEMP: "/tmp"
+      TORCHINDUCTOR_CACHE_DIR: "/cache/torchinductor"
+      TRITON_CACHE_DIR: "/cache/triton"
     vllm_args:
       --tensor-parallel-size: 4
       --gpu-memory-utilization: 0.8
       --max-model-len: 65536
+      --kv-cache-dtype: fp8_e4m3
+      --enable-prefix-caching: true
       --config: "@repo/compilation_configs/gptoss.yaml"
 
   Qwen3-32B:
@@ -315,7 +431,6 @@ models:
     vocab_size: 248320
     gpus_per_node: 4
     venv: "singularity"
-    image_path: "/gpfs/scratch/bsc70/hpai/storage/users/$VEC_INF_STORAGE_USER/singularity/vllm_$VEC_INF_STORAGE_USER.sif"
     vllm_args:
       --tensor-parallel-size: 4
       --max-model-len: 32768

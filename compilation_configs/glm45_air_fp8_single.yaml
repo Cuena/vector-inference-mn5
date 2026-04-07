@@ -1,14 +1,12 @@
 max-model-len: 32768
-gpu-memory-utilization: 0.8
-# NOTE: vLLM async scheduling is currently incompatible with the `ray`
-# distributed executor backend. Keep this disabled for multi-node Ray launches.
+gpu-memory-utilization: 0.75
 async-scheduling: false
 stream-interval: 16
 max-cudagraph-capture-size: 512
-max-num-batched-tokens: 16384
-max-num-seqs: 16
+max-num-batched-tokens: 4096
+max-num-seqs: 8
 
-tool-call-parser: glm47
+tool-call-parser: glm45
 reasoning-parser: glm45
 enable-auto-tool-choice: true
 

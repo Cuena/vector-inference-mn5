@@ -1,0 +1,10 @@
+async-scheduling: false
+max-cudagraph-capture-size: 512
+stream-interval: 8
+max-num-batched-tokens: 4096
+max-num-seqs: 8
+
+compilation-config: >
+  {"mode":"VLLM_COMPILE",
+   "cudagraph_mode":"PIECEWISE",
+   "cudagraph_num_of_warmups":1}
