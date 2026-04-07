@@ -12,9 +12,9 @@ from vec_inf.mn5_setup_wizard import (
 )
 
 
-def test_build_defaults_uses_repo_name_and_storage_user() -> None:
+def test_build_defaults_uses_repo_name() -> None:
     """Derived defaults should stay aligned with the current repo layout."""
-    defaults = build_defaults(remote_user="alice", storage_user="sharedalice")
+    defaults = build_defaults(remote_user="alice")
 
     assert defaults["RSYNC_DEST"].endswith("/repos/vector-inference-mn5")
     assert defaults["VEC_INF_ENV"].endswith("/repos/vector-inference-mn5/.venv")
@@ -37,7 +37,6 @@ def test_render_launch_env_contains_mn5_profile_paths() -> None:
             remote_transfer_host=defaults["REMOTE_TRANSFER_HOST"],
             remote_internet_host=defaults["REMOTE_INTERNET_HOST"],
             remote_user=defaults["REMOTE_USER"],
-            vec_inf_storage_user=defaults["VEC_INF_STORAGE_USER"],
             model_name=defaults["MODEL_NAME"],
             local_port=defaults["LOCAL_PORT"],
             auto_kill_stale_tunnel=defaults["AUTO_KILL_STALE_TUNNEL"],
@@ -79,7 +78,6 @@ def test_describe_setup_effects_explains_actions_in_words() -> None:
             remote_transfer_host=defaults["REMOTE_TRANSFER_HOST"],
             remote_internet_host=defaults["REMOTE_INTERNET_HOST"],
             remote_user=defaults["REMOTE_USER"],
-            vec_inf_storage_user=defaults["VEC_INF_STORAGE_USER"],
             model_name=defaults["MODEL_NAME"],
             local_port=defaults["LOCAL_PORT"],
             auto_kill_stale_tunnel=defaults["AUTO_KILL_STALE_TUNNEL"],
@@ -120,7 +118,6 @@ def test_describe_launch_effects_explains_actions_in_words() -> None:
             remote_transfer_host=defaults["REMOTE_TRANSFER_HOST"],
             remote_internet_host=defaults["REMOTE_INTERNET_HOST"],
             remote_user=defaults["REMOTE_USER"],
-            vec_inf_storage_user=defaults["VEC_INF_STORAGE_USER"],
             model_name=defaults["MODEL_NAME"],
             local_port=defaults["LOCAL_PORT"],
             auto_kill_stale_tunnel=defaults["AUTO_KILL_STALE_TUNNEL"],

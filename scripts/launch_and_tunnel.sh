@@ -72,7 +72,7 @@ fi
 # `.launch.env` acts as defaults.
 _launch_env_vars=(
     REMOTE_LAUNCH_HOST REMOTE_TRANSFER_HOST REMOTE_INTERNET_HOST
-    REMOTE_USER VEC_INF_STORAGE_USER VEC_INF_PROJECT_ROOT
+    REMOTE_USER VEC_INF_PROJECT_ROOT
     VEC_INF_VLLM_IMAGE_PATH VEC_INF_CACHED_MODEL_CONFIG_PATH
     VEC_INF_MODEL_WEIGHTS_PARENT_DIR
     MODEL_NAME LOCAL_PORT AUTO_KILL_STALE_TUNNEL
@@ -185,10 +185,6 @@ VEC_INF_CONFIG_DIR_REMOTE="${VEC_INF_CONFIG_DIR_REMOTE:-}"
 if [ -z "${VEC_INF_CONFIG_DIR_REMOTE}" ]; then
     VEC_INF_CONFIG_DIR_REMOTE="${RSYNC_DEST}/vec_inf/config/marenostrum5"
 fi
-
-# Directory name used in MN5 paths under /gpfs/.../users/<name>/...
-# Defaults to REMOTE_USER, but can be overridden when that path segment differs.
-VEC_INF_STORAGE_USER="${VEC_INF_STORAGE_USER:-$REMOTE_USER}"
 
 # Shared project root used by the public MN5 environment profile.
 VEC_INF_PROJECT_ROOT="${VEC_INF_PROJECT_ROOT:-}"
@@ -519,9 +515,6 @@ echo "Venv:         $VEC_INF_ENV"
 if [ "${VEC_INF_CONFIG_DIR_REMOTE}" != "NONE" ]; then
     echo "Config dir:   $VEC_INF_CONFIG_DIR_REMOTE"
 fi
-if [ -n "${VEC_INF_STORAGE_USER:-}" ]; then
-    echo "Storage user: $VEC_INF_STORAGE_USER"
-fi
 if [ -n "${VEC_INF_VLLM_IMAGE_PATH:-}" ]; then
     echo "vLLM image:   $VEC_INF_VLLM_IMAGE_PATH"
 fi
@@ -579,9 +572,6 @@ fi
 REMOTE_CMD="source '$VEC_INF_ENV/bin/activate'"
 if [ "${VEC_INF_CONFIG_DIR_REMOTE}" != "NONE" ]; then
     REMOTE_CMD+=" && export VEC_INF_CONFIG_DIR='$VEC_INF_CONFIG_DIR_REMOTE'"
-fi
-if [ -n "${VEC_INF_STORAGE_USER:-}" ]; then
-    REMOTE_CMD+=" && export VEC_INF_STORAGE_USER='$VEC_INF_STORAGE_USER'"
 fi
 if [ -n "${VEC_INF_VLLM_IMAGE_PATH:-}" ]; then
     REMOTE_CMD+=" && export VEC_INF_VLLM_IMAGE_PATH='$VEC_INF_VLLM_IMAGE_PATH'"

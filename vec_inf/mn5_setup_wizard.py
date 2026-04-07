@@ -43,7 +43,6 @@ class WizardConfig:
     remote_transfer_host: str
     remote_internet_host: str
     remote_user: str
-    vec_inf_storage_user: str
     model_name: str
     local_port: str
     auto_kill_stale_tunnel: str
@@ -90,7 +89,6 @@ def parse_existing_launch_env(path: Path) -> dict[str, str]:
 
 def build_defaults(
     remote_user: str,
-    storage_user: str | None = None,
     repo_name: str | None = None,
 ) -> dict[str, str]:
     """Build derived defaults from the user identity and local repo name."""
@@ -103,7 +101,6 @@ def build_defaults(
         "REMOTE_TRANSFER_HOST": DEFAULT_REMOTE_TRANSFER_HOST,
         "REMOTE_INTERNET_HOST": DEFAULT_REMOTE_INTERNET_HOST,
         "REMOTE_USER": remote_user,
-        "VEC_INF_STORAGE_USER": storage_user or "",
         "MODEL_NAME": DEFAULT_LIGHTWEIGHT_MODEL,
         "LOCAL_PORT": DEFAULT_LOCAL_PORT,
         "AUTO_KILL_STALE_TUNNEL": "0",
@@ -158,7 +155,6 @@ def render_launch_env(config: WizardConfig) -> str:
         "",
         "# Identity",
         f'REMOTE_USER="{config.remote_user}"',
-        f'VEC_INF_STORAGE_USER="{config.vec_inf_storage_user}"',
         "",
         "# Default launch",
         f'MODEL_NAME="{config.model_name}"',
@@ -208,10 +204,6 @@ def build_summary_table(config: WizardConfig) -> Table:
     table.add_column(style="bold cyan")
     table.add_column()
     table.add_row("Remote user", config.remote_user)
-    table.add_row(
-        "Storage user",
-        config.vec_inf_storage_user or f"{config.remote_user} (same as login)",
-    )
     table.add_row("Remote repo", config.rsync_dest)
     table.add_row("Remote venv", config.vec_inf_env)
     table.add_row("Config dir", config.vec_inf_config_dir_remote)
@@ -335,8 +327,7 @@ def prompt_for_config(console: Console, existing: dict[str, str]) -> WizardConfi
         "Used for ssh, rsync, and derived defaults such as "
         f"/home/bsc/<user>/repos/{REPO_ROOT.name}.",
     )
-    inferred_storage = existing.get("VEC_INF_STORAGE_USER", "").strip() or remote_user
-    defaults = build_defaults(remote_user, inferred_storage)
+    defaults = build_defaults(remote_user)
     merged = {**defaults, **existing}
     merged["REMOTE_USER"] = remote_user
     merged["RSYNC_DEST"] = prompt_with_help(
@@ -345,9 +336,6 @@ def prompt_for_config(console: Console, existing: dict[str, str]) -> WizardConfi
         defaults["RSYNC_DEST"],
         "Repo copy on MN5. Keeping it inside /home/bsc/<user>/repos/... avoids "
         "reusing older checkouts by accident.",
-    )
-    merged["VEC_INF_STORAGE_USER"] = (
-        "" if inferred_storage == remote_user else inferred_storage
     )
 
     merged["REMOTE_ACCOUNT"] = prompt_with_help(
@@ -361,31 +349,35 @@ def prompt_for_config(console: Console, existing: dict[str, str]) -> WizardConfi
         console,
         "Remote Python environment",
         f'{merged["RSYNC_DEST"]}/.venv',
-        "Remote environment that runs vec-inf on the login node. "
-        "first_time_setup.sh creates it with uv sync.",
+        "Python venv on the MN5 login node used to run `vec-inf launch`. "
+        "first_time_setup.sh creates it via `uv sync`. This is NOT the "
+        "venv/container used on compute nodes (that comes from models.yaml).",
     )
     merged["VEC_INF_CONFIG_DIR_REMOTE"] = prompt_with_help(
         console,
         "Remote config directory",
         f'{merged["RSYNC_DEST"]}/vec_inf/config/marenostrum5',
-        "Folder on MN5 that contains this repo's environment.yaml and models.yaml. "
-        "The launcher sets VEC_INF_CONFIG_DIR to this path so vec-inf uses the "
-        "MN5 profile from your remote checkout.",
+        "Folder on MN5 containing environment.yaml and models.yaml. "
+        "The launcher exports VEC_INF_CONFIG_DIR to this path on the login "
+        "node so `vec-inf launch` reads the MN5 profile. Paths inside "
+        "these YAMLs (image, weights, work_dir) are resolved there too.",
     )
     merged["REMOTE_WORK_DIR"] = prompt_with_help(
         console,
         "Remote work directory",
-        merged["RSYNC_DEST"],
-        "Passed to vec-inf launch --work-dir and used for runtime caches.",
+        merged.get("REMOTE_WORK_DIR") or defaults["REMOTE_WORK_DIR"],
+        "Slurm --chdir for launched jobs. The job creates .vec-inf-cache/ "
+        "here for compilation and tokenizer caches, so this should be on "
+        "scratch (e.g. /gpfs/scratch/bsc70/users/<user>/vec-inf-work) to "
+        "avoid filling the small MN5 home quota.",
     )
     merged["VEC_INF_VLLM_IMAGE_PATH"] = prompt_with_help(
         console,
         "Default vLLM image",
         defaults["VEC_INF_VLLM_IMAGE_PATH"],
         "Container image used by the MN5 profile for most launches. "
-        "Set this to an existing SIF on MN5. If you build a fresh image for "
-        "gpt-oss, the current upstream Docker tag is "
-        "vllm/vllm-openai:v0.18.1-cu130.",
+        "Set this to an existing SIF on MN5. The shared team default is "
+        "vllm_openai_0.18.0.sif under /gpfs/scratch/bsc70/singularity/.",
     )
     merged["VEC_INF_MODEL_WEIGHTS_PARENT_DIR"] = prompt_with_help(
         console,
@@ -399,7 +391,7 @@ def prompt_for_config(console: Console, existing: dict[str, str]) -> WizardConfi
     )
 
     if Confirm.ask(
-        "Edit advanced options (hosts, local port, default model, storage variable)?",
+        "Edit advanced options (hosts, local port, default model, QoS)?",
         default=False,
         console=console,
     ):
@@ -441,19 +433,6 @@ def prompt_for_config(console: Console, existing: dict[str, str]) -> WizardConfi
             "selected MN5 config already defines.",
             allow_empty=True,
         )
-        storage_default = merged["VEC_INF_STORAGE_USER"] or remote_user
-        storage_user_input = prompt_with_help(
-            console,
-            "Storage path user",
-            storage_default,
-            "Optional value exported as VEC_INF_STORAGE_USER. You only need this "
-            "if your models.yaml or environment.yaml explicitly uses "
-            "$VEC_INF_STORAGE_USER in a path template and that value should differ "
-            "from your login name.",
-        )
-        merged["VEC_INF_STORAGE_USER"] = (
-            "" if storage_user_input == remote_user else storage_user_input
-        )
     else:
         merged["MODEL_NAME"] = existing.get("MODEL_NAME", defaults["MODEL_NAME"])
         merged["LOCAL_PORT"] = existing.get("LOCAL_PORT", defaults["LOCAL_PORT"])
@@ -484,7 +463,6 @@ def prompt_for_config(console: Console, existing: dict[str, str]) -> WizardConfi
         remote_transfer_host=merged["REMOTE_TRANSFER_HOST"],
         remote_internet_host=merged["REMOTE_INTERNET_HOST"],
         remote_user=merged["REMOTE_USER"],
-        vec_inf_storage_user=merged["VEC_INF_STORAGE_USER"],
         model_name=merged["MODEL_NAME"],
         local_port=merged["LOCAL_PORT"],
         auto_kill_stale_tunnel=merged["AUTO_KILL_STALE_TUNNEL"],

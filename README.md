@@ -78,11 +78,10 @@ The important fields are:
 - `REMOTE_ACCOUNT`: Slurm account.
 - `VEC_INF_VLLM_IMAGE_PATH`: default vLLM image used by the MN5 profile.
 - `VEC_INF_MODEL_WEIGHTS_PARENT_DIR`: parent directory containing model weights.
-- `VEC_INF_STORAGE_USER`: only if your config templates explicitly use `$VEC_INF_STORAGE_USER`.
 
 The tracked MN5 profile in [`vec_inf/config/marenostrum5/environment.yaml`](vec_inf/config/marenostrum5/environment.yaml) now reads those path values from `.launch.env`, so most users do not need to edit the YAML directly. This onboarding flow configures vLLM only. You only need to touch [`vec_inf/config/marenostrum5/models.yaml`](vec_inf/config/marenostrum5/models.yaml) when a specific model should use a different image or runtime override.
 
-To launch `gpt-oss-120b-0109` on MN5, point `VEC_INF_VLLM_IMAGE_PATH` at an actual existing SIF on MN5. If you are building a fresh image, the current upstream Docker tag is `vllm/vllm-openai:v0.18.1-cu130`. Then run:
+To launch `gpt-oss-120b-0109` on MN5, make sure `VEC_INF_VLLM_IMAGE_PATH` points at the shared SIF (the wizard default is `vllm_openai_0.18.0.sif`). Then run:
 
 ```bash
 ./scripts/launch_and_tunnel.sh gpt-oss-120b-0109 5678

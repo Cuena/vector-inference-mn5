@@ -77,7 +77,6 @@ cp scripts/.launch.env.example scripts/.launch.env
 - `REMOTE_ACCOUNT`
 - `VEC_INF_VLLM_IMAGE_PATH`
 - `VEC_INF_MODEL_WEIGHTS_PARENT_DIR`
-- `VEC_INF_STORAGE_USER` only if your config templates explicitly use `$VEC_INF_STORAGE_USER`
 
 3. The tracked MN5 profile at [`vec_inf/config/marenostrum5/environment.yaml`](../vec_inf/config/marenostrum5/environment.yaml) reads those values from `.launch.env`, so most users do not need to modify the YAML directly.
 
@@ -85,13 +84,11 @@ cp scripts/.launch.env.example scripts/.launch.env
 
 ## gpt-oss on MN5
 
-For `gpt-oss-120b-0109`, set `VEC_INF_VLLM_IMAGE_PATH` to an actual existing SIF on MN5. If you are building a fresh image, the current upstream Docker tag is `vllm/vllm-openai:v0.18.1-cu130`. Then launch:
+For `gpt-oss-120b-0109`, make sure `VEC_INF_VLLM_IMAGE_PATH` points at the shared SIF (the wizard default is `vllm_openai_0.18.0.sif`). Then launch:
 
 ```bash
 ./scripts/launch_and_tunnel.sh gpt-oss-120b-0109 5678
 ```
-
-The tracked MN5 config now keeps `gpt-oss` on the shared `VEC_INF_VLLM_IMAGE_PATH` path instead of a user-specific hardcoded `0.18.0` image.
 
 ## MN5 Config Profile
 
@@ -124,4 +121,3 @@ To print a tunnel command for an already-running job:
 - Keep secrets and user-specific paths only in `scripts/.launch.env` (which is gitignored).
 - Set explicit `RSYNC_DEST`/`VEC_INF_ENV`/`REMOTE_WORK_DIR` if you want side-by-side versions (for example, `-mn5`) without reusing old paths.
 - The wizard-backed `.launch.env` values are exported into the tracked MN5 profile, which keeps the versioned YAML generic for the team.
-- `launch_and_tunnel.sh` exports `VEC_INF_STORAGE_USER` only as an optional variable for config templates that reference it.
