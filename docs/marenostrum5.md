@@ -21,7 +21,7 @@ The wizard writes `scripts/.launch.env`, explains each setting, and pre-fills de
 
 - `REMOTE_USER`: your BSC login username.
 - `REMOTE_ACCOUNT`: defaults to `bsc70` in the wizard because that is the current team example in this repo.
-- `VEC_INF_VLLM_IMAGE_PATH`: defaults to `/gpfs/scratch/bsc70/singularity/vllm_openai_latest.sif`.
+- `VEC_INF_VLLM_IMAGE_PATH`: defaults to `/gpfs/scratch/bsc70/singularity/vllm_openai_0.18.0.sif`.
 - `VEC_INF_MODEL_WEIGHTS_PARENT_DIR`: defaults to `/gpfs/scratch/bsc70/hpai/storage/projects/heka/models`.
 
 Before running anything, the wizard prints the exact shell command it will execute and the effect that command will have. It can also immediately:
@@ -52,6 +52,15 @@ Server endpoint will be available at:
 http://localhost:5678/v1
 ```
 
+To inspect active local tunnels, recover the exact served model id, and print canned validation calls:
+
+```bash
+./scripts/tunnel_tool.py status
+./scripts/tunnel_tool.py show --port 5678
+./scripts/tunnel_tool.py curls --port 5678
+./scripts/tunnel_tui.py
+```
+
 ## Manual configuration
 
 If you prefer not to use the wizard:
@@ -73,6 +82,16 @@ cp scripts/.launch.env.example scripts/.launch.env
 3. The tracked MN5 profile at [`vec_inf/config/marenostrum5/environment.yaml`](../vec_inf/config/marenostrum5/environment.yaml) reads those values from `.launch.env`, so most users do not need to modify the YAML directly.
 
 4. Only edit [`vec_inf/config/marenostrum5/models.yaml`](../vec_inf/config/marenostrum5/models.yaml) when a specific model needs a different image path or runtime override.
+
+## gpt-oss on MN5
+
+For `gpt-oss-120b-0109`, set `VEC_INF_VLLM_IMAGE_PATH` to an actual existing SIF on MN5. If you are building a fresh image, the current upstream Docker tag is `vllm/vllm-openai:v0.18.1-cu130`. Then launch:
+
+```bash
+./scripts/launch_and_tunnel.sh gpt-oss-120b-0109 5678
+```
+
+The tracked MN5 config now keeps `gpt-oss` on the shared `VEC_INF_VLLM_IMAGE_PATH` path instead of a user-specific hardcoded `0.18.0` image.
 
 ## MN5 Config Profile
 

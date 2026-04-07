@@ -4,9 +4,9 @@
 
 [![PyPI](https://img.shields.io/pypi/v/vec-inf)](https://pypi.org/project/vec-inf)
 [![downloads](https://img.shields.io/pypi/dm/vec-inf)](https://pypistats.org/packages/vec-inf)
-[![vLLM](https://img.shields.io/badge/vLLM-0.15.0-blue)](https://docs.vllm.ai/en/v0.15.0/)
+[![vLLM](https://img.shields.io/badge/vLLM-0.18.x-blue)](https://docs.vllm.ai/en/stable/)
 
-This repository provides an easy-to-use solution to run inference servers on [Slurm](https://slurm.schedmd.com/overview.html)-managed computing clusters using open-source inference engines ([vLLM](https://docs.vllm.ai/en/v0.15.0/), [SGLang](https://docs.sglang.io/index.html)). **This package runs natively on the Vector Institute cluster environments**. To adapt to other environments, follow the instructions in [Installation](#installation).
+This repository provides an easy-to-use solution to run inference servers on [Slurm](https://slurm.schedmd.com/overview.html)-managed computing clusters using open-source inference engines ([vLLM](https://docs.vllm.ai/en/stable/), [SGLang](https://docs.sglang.io/index.html)). **This package runs natively on the Vector Institute cluster environments**. To adapt to other environments, follow the instructions in [Installation](#installation).
 
 **NOTE**: Supported models on Killarney are tracked [here](./MODEL_TRACKING.md)
 
@@ -52,6 +52,15 @@ Before running anything, the wizard shows the exact command line and the expecte
 http://localhost:5678/v1
 ```
 
+To inspect currently accessible local tunnels, recover the exact served model id from `/v1/models`, and print canned validation calls:
+
+```bash
+./scripts/tunnel_tool.py status
+./scripts/tunnel_tool.py show --port 5678
+./scripts/tunnel_tool.py curls --port 5678
+./scripts/tunnel_tui.py
+```
+
 ### Manual fallback
 
 If you prefer to edit files yourself instead of using the wizard:
@@ -72,6 +81,12 @@ The important fields are:
 - `VEC_INF_STORAGE_USER`: only if your config templates explicitly use `$VEC_INF_STORAGE_USER`.
 
 The tracked MN5 profile in [`vec_inf/config/marenostrum5/environment.yaml`](vec_inf/config/marenostrum5/environment.yaml) now reads those path values from `.launch.env`, so most users do not need to edit the YAML directly. This onboarding flow configures vLLM only. You only need to touch [`vec_inf/config/marenostrum5/models.yaml`](vec_inf/config/marenostrum5/models.yaml) when a specific model should use a different image or runtime override.
+
+To launch `gpt-oss-120b-0109` on MN5, point `VEC_INF_VLLM_IMAGE_PATH` at an actual existing SIF on MN5. If you are building a fresh image, the current upstream Docker tag is `vllm/vllm-openai:v0.18.1-cu130`. Then run:
+
+```bash
+./scripts/launch_and_tunnel.sh gpt-oss-120b-0109 5678
+```
 
 ### Why explicit paths matter
 
