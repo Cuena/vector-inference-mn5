@@ -319,9 +319,11 @@ class ModelLauncher:
 
         total_gpus_requested = int(params["gpus_per_node"]) * int(params["num_nodes"])
 
-        total_parallel_sizes = int(
-            params["engine_args"].get("--tensor-parallel-size", "1")
-        ) * int(params["engine_args"].get("--pipeline-parallel-size", "1"))
+        total_parallel_sizes = (
+            int(params["engine_args"].get("--tensor-parallel-size", "1"))
+            * int(params["engine_args"].get("--pipeline-parallel-size", "1"))
+            * int(params["engine_args"].get("--data-parallel-size", "1"))
+        )
         if total_gpus_requested != total_parallel_sizes:
             raise ValueError(
                 "Mismatch between total number of GPUs requested and parallelization settings"
@@ -610,9 +612,11 @@ class BatchModelLauncher:
                 f"Total number of GPUs requested must be a power of two, check your configuration for {model_name}"
             )
 
-        total_parallel_sizes = int(
-            (model_engine_args or {}).get("--tensor-parallel-size", "1")
-        ) * int((model_engine_args or {}).get("--pipeline-parallel-size", "1"))
+        total_parallel_sizes = (
+            int((model_engine_args or {}).get("--tensor-parallel-size", "1"))
+            * int((model_engine_args or {}).get("--pipeline-parallel-size", "1"))
+            * int((model_engine_args or {}).get("--data-parallel-size", "1"))
+        )
         if total_gpus_requested != total_parallel_sizes:
             raise ValueError(
                 f"Mismatch between total number of GPUs requested and parallelization settings, check your configuration for {model_name}"

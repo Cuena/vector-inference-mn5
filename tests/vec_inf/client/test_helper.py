@@ -202,6 +202,29 @@ class TestModelLauncher:
         assert "mem_per_node" not in params
 
     @patch("vec_inf.client._helper.utils.load_config")
+    def test_get_launch_params_accepts_data_parallel_layout(
+        self, mock_load_config, model_config
+    ):
+        """DP should count toward total parallelism validation."""
+        updated_config = model_config.model_copy(
+            update={
+                "gpus_per_node": 4,
+                "num_nodes": 4,
+                "vllm_args": {
+                    "--tensor-parallel-size": "8",
+                    "--data-parallel-size": "2",
+                },
+            }
+        )
+        mock_load_config.return_value = [updated_config]
+
+        launcher = ModelLauncher("test-model", {})
+        params = launcher.params
+
+        assert params["engine_args"]["--tensor-parallel-size"] == "8"
+        assert params["engine_args"]["--data-parallel-size"] == "2"
+
+    @patch("vec_inf.client._helper.utils.load_config")
     def test_get_launch_params_with_multi_gpu_no_tp(
         self, mock_load_config, model_config
     ):
