@@ -143,20 +143,19 @@ def test_load_config_default_only():
 
     # Verify at least one known model exists
     model_names = {m.model_name for m in configs}
-    assert "InternVL3_5-8B-Instruct" in model_names
+    assert "Llama-3.2-3B-Instruct" in model_names
 
     # Verify full configuration of a sample model
-    model = next(m for m in configs if m.model_name == "InternVL3_5-8B-Instruct")
-    assert model.model_family == "InternVL3_5"
-    assert model.model_type in {"LLM", "VLM"}
+    model = next(m for m in configs if m.model_name == "Llama-3.2-3B-Instruct")
+    assert model.model_family == "Llama-3.2"
+    assert model.model_type == "LLM"
     assert model.gpus_per_node > 0
     assert model.num_nodes > 0
 
     if model.vllm_args:
-        # The key should be "--max-model-len" as in YAML
         max_len = model.vllm_args.get("--max-model-len")
         if max_len is not None:
-            assert max_len == 40960
+            assert max_len == 16384
 
 
 def test_load_config_mn5_profile_includes_lightweight_model(
