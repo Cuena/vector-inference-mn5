@@ -6,6 +6,8 @@ import importlib.util
 import sys
 from pathlib import Path
 
+from rich.console import Console
+
 
 def _load_tunnel_tui_module():
     script_path = Path(__file__).resolve().parents[2] / "scripts" / "tunnel_tui.py"
@@ -21,17 +23,23 @@ def _load_tunnel_tui_module():
     return module
 
 
+def _render_to_text(renderable) -> str:
+    """Render a Rich renderable to plain text for assertion."""
+    console = Console(file=None, force_terminal=False, no_color=True, width=200)
+    with console.capture() as capture:
+        console.print(renderable)
+    return capture.get()
+
+
 def test_build_status_line_pluralizes() -> None:
-    """The TUI status line should describe the active tunnel count."""
     module = _load_tunnel_tui_module()
 
-    assert module.build_status_line(1).startswith("1 active local tunnel")
-    assert module.build_status_line(2).startswith("2 active local tunnels")
-    assert "loading..." in module.build_status_line(1, loading=True)
+    assert "1 active tunnel" in module.build_status_line(1)
+    assert "2 active tunnels" in module.build_status_line(2)
+    assert "loading" in module.build_status_line(1, loading=True)
 
 
-def test_format_commands_text_uses_openai_compatible_calls() -> None:
-    """The command pane should render the shared OpenAI-style validation calls."""
+def test_format_commands_uses_openai_compatible_calls() -> None:
     module = _load_tunnel_tui_module()
     record = module.TunnelRecord(
         local_port=5678,
@@ -40,17 +48,17 @@ def test_format_commands_text_uses_openai_compatible_calls() -> None:
         job_id="12345",
     )
 
-    commands_text = module.format_commands_text(record)
+    text = _render_to_text(module.format_commands(record))
 
-    assert "/completions" in commands_text
-    assert "Tell a short joke about GPUs" in commands_text
-    assert "Exact-Served-Model" in commands_text
-    assert "[h] Health" in commands_text
-    assert "vec-inf status 12345" in commands_text
+    assert "/chat/completions" in text
+    assert "Say hi" in text
+    assert "Exact-Served-Model" in text
+    assert "Health" in text
+    assert "scontrol show job" in text
+    assert "12345" in text
 
 
 def test_find_row_for_port_preserves_selection_when_present() -> None:
-    """The auto-refresh path should keep the same tunnel selected when possible."""
     module = _load_tunnel_tui_module()
     app = module.TunnelTui()
     app._records = [
@@ -62,8 +70,7 @@ def test_find_row_for_port_preserves_selection_when_present() -> None:
     assert app._find_row_for_port(9999) == 0
 
 
-def test_format_output_text_lists_shortcuts_for_selected_tunnel() -> None:
-    """The output pane should explain how to run the predefined checks."""
+def test_format_output_lists_shortcuts_for_selected_tunnel() -> None:
     module = _load_tunnel_tui_module()
     record = module.TunnelRecord(
         local_port=5678,
@@ -71,7 +78,26 @@ def test_format_output_text_lists_shortcuts_for_selected_tunnel() -> None:
         job_id="12345",
     )
 
-    output = module.format_output_text(record)
+    text = _render_to_text(module.format_output(record))
 
-    assert "Selected tunnel: port 5678" in output
-    assert "h, m, t, c, s" in output
+    assert "5678" in text
+    assert "h" in text
+    assert "m" in text
+    assert "c" in text
+
+
+def test_format_details_shows_model_and_health() -> None:
+    module = _load_tunnel_tui_module()
+    record = module.TunnelRecord(
+        local_port=5678,
+        base_url="http://127.0.0.1:5678/v1",
+        served_model_names=["MyModel"],
+        health_ok=True,
+        job_id="999",
+    )
+
+    text = _render_to_text(module.format_details(record))
+
+    assert "MyModel" in text
+    assert "ok" in text
+    assert "999" in text

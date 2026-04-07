@@ -337,19 +337,20 @@ def build_validation_commands(record: TunnelRecord) -> list[ValidationCommand]:
         ValidationCommand("t", "Metrics", 'curl -fsS "${BASE_URL%/v1}/metrics" | head'),
         ValidationCommand(
             "c",
-            "Completion",
+            "Chat",
             (
-                'curl -fsS "$BASE_URL/completions" '
-                '-H "Content-Type: application/json" '
-                '-d "{\"model\":\"$MODEL\",\"prompt\":\"Tell a short joke about GPUs in 2 or 3 sentences.\",\"max_tokens\":96,\"temperature\":0.7}" '
+                "curl -fsS \"$BASE_URL/chat/completions\" "
+                "-H \"Content-Type: application/json\" "
+                "-d '{\"model\":\"'\"$MODEL\"'\",\"messages\":[{\"role\":\"user\",\"content\":\"Say hi in one sentence.\"}],\"max_tokens\":64,\"temperature\":0.7}' "
                 "| python3 -m json.tool"
             ),
         ),
     ]
     if record.job_id:
-        commands.append(
-            ValidationCommand("s", "Vec-Inf Status", f"vec-inf status {shlex.quote(record.job_id)}")
-        )
+        status_cmd = f"scontrol show job {shlex.quote(record.job_id)}"
+        if record.ssh_target:
+            status_cmd = f"ssh -q {shlex.quote(record.ssh_target)} {shlex.quote(status_cmd)}"
+        commands.append(ValidationCommand("s", "Slurm Status", status_cmd))
     return commands
 
 

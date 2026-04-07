@@ -111,7 +111,7 @@ def test_build_curl_commands_uses_served_model_name() -> None:
     commands = module.build_curl_commands(record)
 
     assert 'MODEL=Exact-Served-Model' in commands[1]
-    assert any(command == "vec-inf status 12345" for command in commands)
+    assert any("scontrol show job" in command and "12345" in command for command in commands)
 
 
 def test_build_validation_commands_includes_shortcuts_and_optional_status() -> None:
@@ -127,9 +127,10 @@ def test_build_validation_commands_includes_shortcuts_and_optional_status() -> N
     commands = module.build_validation_commands(record)
 
     assert [command.key for command in commands] == ["h", "m", "t", "c", "s"]
-    assert "/completions" in commands[3].command
-    assert "Tell a short joke about GPUs" in commands[3].command
-    assert commands[-1].command == "vec-inf status 12345"
+    assert "/chat/completions" in commands[3].command
+    assert "Say hi in one sentence" in commands[3].command
+    assert "scontrol show job" in commands[-1].command
+    assert "12345" in commands[-1].command
 
 
 def test_build_validation_environment_prefers_served_model_name() -> None:

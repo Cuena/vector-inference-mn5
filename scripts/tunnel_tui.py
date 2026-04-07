@@ -5,6 +5,10 @@ from __future__ import annotations
 
 import subprocess
 
+from rich.console import Group
+from rich.table import Table
+from rich.text import Text
+
 from textual import work
 from textual.app import App, ComposeResult
 from textual.containers import Container, Vertical, VerticalScroll
@@ -31,99 +35,134 @@ def load_tunnel_records() -> list[TunnelRecord]:
     return sorted(records.values(), key=lambda record: record.local_port)
 
 
-def format_health(record: TunnelRecord) -> str:
-    """Format a compact health label."""
+def _health_style(record: TunnelRecord) -> tuple[str, str]:
+    """Return (label, rich style) for health status."""
     if record.health_ok is True:
-        return "ok"
+        return "ok", "green"
     if record.probe_error:
-        return "down"
-    return "unknown"
+        return "down", "red"
+    return "?", "yellow"
+
+
+def _kv_table(rows: list[tuple[str, str]], label_width: int = 14) -> Table:
+    table = Table.grid(padding=(0, 2), expand=False)
+    table.add_column(style="dim", width=label_width, no_wrap=True)
+    table.add_column(overflow="fold")
+    for label, value in rows:
+        table.add_row(label, value)
+    return table
 
 
 def build_status_line(record_count: int, loading: bool = False) -> str:
-    """Build the top-level status summary."""
     noun = "tunnel" if record_count == 1 else "tunnels"
-    loading_text = " | loading..." if loading else ""
-    return f"{record_count} active local {noun}{loading_text} | refresh every 5s"
+    suffix = "  loading…" if loading else ""
+    return f" {record_count} active {noun}{suffix}"
 
 
-def format_details_text(record: TunnelRecord | None) -> str:
-    """Render the details pane for a selected tunnel."""
+def format_details(record: TunnelRecord | None) -> Group | Text:
     if record is None:
-        return "No active local vec-inf tunnels found."
+        return Text("No active tunnels.", style="dim italic")
 
-    lines = [
-        f"Port: {record.local_port}",
-        f"Base URL: {record.base_url}",
-        f"Served model(s): {record.display_model_name()}",
-        f"Requested model: {record.requested_model_name or '-'}",
-        f"Job ID: {record.job_id or '-'}",
-        f"Health: {format_health(record)}",
-        f"SSH target: {record.ssh_target or '-'}",
+    health_label, health_style = _health_style(record)
+
+    rows: list[tuple[str, str]] = [
+        ("URL", record.base_url),
+        ("Model", record.display_model_name()),
+        ("Health", health_label),
+        ("Job", record.job_id or "-"),
+        ("SSH target", record.ssh_target or "-"),
     ]
     if record.remote_server_host or record.remote_server_port:
-        remote_host = record.remote_server_host or record.remote_server_ip or "-"
-        remote_port = record.remote_server_port or "-"
-        lines.append(f"Remote server: {remote_host}:{remote_port}")
+        host = record.remote_server_host or record.remote_server_ip or "-"
+        port = record.remote_server_port or "-"
+        rows.append(("Remote", f"{host}:{port}"))
     if record.probe_error:
-        lines.append(f"Probe error: {record.probe_error}")
-    return "\n".join(lines)
+        rows.append(("Error", record.probe_error))
+
+    kv = _kv_table(rows)
+
+    health_row_idx = next(i for i, (l, _) in enumerate(rows) if l == "Health")
+    kv.columns[1]._cells[health_row_idx] = Text(health_label, style=f"bold {health_style}")
+
+    return Group(Text("Details", style="bold"), kv)
 
 
-def format_commands_text(record: TunnelRecord | None) -> str:
-    """Render canned validation commands for a selected tunnel."""
+def format_commands(record: TunnelRecord | None) -> Group | Text:
     if record is None:
-        return "Select a live tunnel to see commands."
+        return Text("Select a tunnel to see commands.", style="dim italic")
 
-    command_specs = build_validation_commands(record)
-    sections = ["Environment:"]
-    sections.extend(build_validation_environment(record))
-    sections.append("")
-    sections.append("Commands:")
-    for command in command_specs:
-        sections.append(f"[{command.key}] {command.label}")
-        sections.append(command.command)
-        sections.append("")
-    return "\n".join(sections).rstrip()
+    specs = build_validation_commands(record)
+    env_lines = build_validation_environment(record)
+
+    parts: list[Text | Table] = [Text("Commands", style="bold")]
+
+    env_table = Table.grid(padding=(0, 1), expand=False)
+    env_table.add_column(style="dim")
+    for line in env_lines:
+        env_table.add_row(line)
+    parts.append(env_table)
+    parts.append(Text(""))
+
+    cmd_table = Table.grid(padding=(0, 2), expand=False)
+    cmd_table.add_column(style="bold cyan", width=3, no_wrap=True)
+    cmd_table.add_column(style="bold", width=12, no_wrap=True)
+    cmd_table.add_column(style="dim", overflow="fold")
+    for spec in specs:
+        cmd_table.add_row(spec.key, spec.label, spec.command)
+    parts.append(cmd_table)
+
+    return Group(*parts)
 
 
-def format_output_text(record: TunnelRecord | None, command: ValidationCommand | None = None) -> str:
-    """Render the output pane placeholder for the selected tunnel."""
+def format_output(
+    record: TunnelRecord | None,
+    command: ValidationCommand | None = None,
+) -> Group | Text:
     if record is None:
-        return "Select a live tunnel, then press h/m/t/c/s to run a predefined check."
+        return Text("Select a tunnel, then press a key to run a check.", style="dim italic")
     if command is None:
-        available = ", ".join(spec.key for spec in build_validation_commands(record))
-        return (
-            f"Selected tunnel: port {record.local_port}\n"
-            f"Available commands: {available}\n"
-            "Press the matching key to run a check."
+        keys = ", ".join(f"[bold cyan]{s.key}[/bold cyan]" for s in build_validation_commands(record))
+        return Text.from_markup(
+            f"Port {record.local_port} selected.  Press {keys} to run a check."
         )
-    return f"Running {command.label} for port {record.local_port}..."
+    return Text(f"Running {command.label}…", style="dim italic")
 
 
-def render_command_output(command: ValidationCommand, exit_code: int, stdout: str, stderr: str) -> str:
-    """Render command execution output as plain text."""
+def render_command_output(
+    command: ValidationCommand,
+    exit_code: int,
+    stdout: str,
+    stderr: str,
+) -> Group:
     stdout = stdout.strip()
     stderr = stderr.strip()
-    sections = [
-        f"$ {command.command}",
-        f"Exit code: {exit_code}",
-        "",
-        "STDOUT:",
-        stdout or "<empty>",
-    ]
+
+    status_style = "green" if exit_code == 0 else "red"
+    header = Text.assemble(
+        ("$ ", "dim"),
+        (command.command, ""),
+        ("  →  ", "dim"),
+        (str(exit_code), f"bold {status_style}"),
+    )
+
+    parts: list[Text] = [header, Text("")]
+    if stdout:
+        parts.append(Text(stdout))
+    else:
+        parts.append(Text("<no output>", style="dim italic"))
     if stderr:
-        sections.extend(["", "STDERR:", stderr])
-    return "\n".join(sections)
+        parts.append(Text(""))
+        parts.append(Text(stderr, style="red"))
+
+    return Group(*parts)
 
 
 class TunnelTui(App[None]):
     """Inspect active local vec-inf tunnels in a Textual TUI."""
 
-    TITLE = "Vector Inference Tunnel Inspector"
-    SUB_TITLE = "Browse active local tunnels and validation calls"
+    TITLE = "vec-inf tunnels"
     COMPACT_WIDTH = 94
-    AUTO_REFRESH_SECONDS = 5.0
+    AUTO_REFRESH_SECONDS = 30.0
     COMMAND_TIMEOUT_SECONDS = 20.0
 
     CSS = """
@@ -138,7 +177,6 @@ class TunnelTui(App[None]):
         border: round $panel;
         background: $surface;
     }
-
     #topbar-status {
         color: $text 75%;
         padding: 0;
@@ -163,16 +201,8 @@ class TunnelTui(App[None]):
         max-width: 46;
         margin-right: 1;
     }
-
     #right-pane {
         width: 1fr;
-    }
-
-    .section-title {
-        height: 1;
-        color: $text;
-        text-style: bold;
-        margin-bottom: 0;
     }
 
     #tunnel-table {
@@ -181,24 +211,28 @@ class TunnelTui(App[None]):
         border: none;
     }
 
-    #details-scroll,
-    #commands-scroll,
+    #info-scroll {
+        height: auto;
+        max-height: 60%;
+        background: $background 15%;
+        border: none;
+        margin-bottom: 1;
+    }
     #output-scroll {
+        height: 1fr;
         background: $background 15%;
         border: none;
     }
 
-    #details-scroll {
-        height: 9;
-        margin-bottom: 1;
+    #info, #output {
+        padding: 0 1;
     }
 
-    #commands-scroll {
-        height: 12;
-        margin-bottom: 1;
-    }
-
-    #output {
+    #keyhints {
+        height: 1;
+        dock: bottom;
+        background: $surface;
+        color: $text 60%;
         padding: 0 1;
     }
 
@@ -208,16 +242,13 @@ class TunnelTui(App[None]):
         border-right: none;
         border-top: none;
     }
-
     Screen.compact #main {
         layout: vertical;
         margin: 0 1;
     }
-
     Screen.compact .panel {
         padding: 0 1 1 1;
     }
-
     Screen.compact #left-pane,
     Screen.compact #right-pane {
         width: 1fr;
@@ -225,24 +256,22 @@ class TunnelTui(App[None]):
         max-width: 1fr;
         margin-right: 0;
     }
-
     Screen.compact #left-pane {
         margin-bottom: 1;
         height: 10;
         min-height: 10;
     }
-
     Screen.compact #right-pane {
         height: 1fr;
     }
     """
 
     BINDINGS = [
-        ("h", "run_health", "Health"),
-        ("m", "run_models", "Models"),
-        ("t", "run_metrics", "Metrics"),
-        ("c", "run_completion", "Completion"),
-        ("s", "run_status", "Status"),
+        ("h", "run_command('h')", "Health"),
+        ("m", "run_command('m')", "Models"),
+        ("t", "run_command('t')", "Metrics"),
+        ("c", "run_command('c')", "Chat"),
+        ("s", "run_command('s')", "Status"),
         ("r", "refresh", "Refresh"),
         ("q", "quit", "Quit"),
     ]
@@ -253,6 +282,9 @@ class TunnelTui(App[None]):
         self._records: list[TunnelRecord] = []
         self._refresh_pending = False
         self._command_pending = False
+        self._output_port: int | None = None
+        self._output_has_result = False
+        self._rebuilding_table = False
 
     def compose(self) -> ComposeResult:
         with Vertical(id="topbar"):
@@ -261,15 +293,17 @@ class TunnelTui(App[None]):
             with Vertical(id="left-pane", classes="panel"):
                 yield DataTable(id="tunnel-table")
             with Vertical(id="right-pane", classes="panel"):
-                yield Static("Details", classes="section-title")
-                with VerticalScroll(id="details-scroll"):
-                    yield Static(format_details_text(None), id="details")
-                yield Static("Commands", classes="section-title")
-                with VerticalScroll(id="commands-scroll"):
-                    yield Static(format_commands_text(None), id="commands")
-                yield Static("Output", classes="section-title")
+                with VerticalScroll(id="info-scroll"):
+                    yield Static(id="info")
                 with VerticalScroll(id="output-scroll"):
-                    yield Static(format_output_text(None), id="output")
+                    yield Static(id="output")
+        yield Static(
+            " [b cyan]h[/]ealth  [b cyan]m[/]odels  me[b cyan]t[/]rics  "
+            "[b cyan]c[/]hat  [b cyan]s[/]tatus  "
+            "[b cyan]r[/]efresh  [b cyan]q[/]uit",
+            id="keyhints",
+            markup=True,
+        )
 
     def on_mount(self) -> None:
         self._sync_layout()
@@ -285,30 +319,17 @@ class TunnelTui(App[None]):
         self._sync_layout()
 
     def _sync_layout(self) -> None:
-        size = self.size
-        compact = size.width < self.COMPACT_WIDTH
+        compact = self.size.width < self.COMPACT_WIDTH
         self.screen.set_class(compact, "compact")
+
+    # ------------------------------------------------------------------
+    # Refresh
+    # ------------------------------------------------------------------
 
     def action_refresh(self) -> None:
         self.schedule_refresh()
 
-    def action_run_health(self) -> None:
-        self.run_selected_command("h")
-
-    def action_run_models(self) -> None:
-        self.run_selected_command("m")
-
-    def action_run_metrics(self) -> None:
-        self.run_selected_command("t")
-
-    def action_run_completion(self) -> None:
-        self.run_selected_command("c")
-
-    def action_run_status(self) -> None:
-        self.run_selected_command("s")
-
     def schedule_refresh(self) -> None:
-        """Schedule a refresh so the UI can paint before probing tunnels."""
         if self._refresh_pending:
             return
         self._refresh_pending = True
@@ -316,154 +337,163 @@ class TunnelTui(App[None]):
         self.query_one("#topbar-status", Static).update(
             build_status_line(len(self._records), loading=True)
         )
-        self.refresh_records_worker(selected_port)
+        self._refresh_worker(selected_port)
 
     @work(thread=True, exclusive=True, group="refresh", exit_on_error=False)
-    def refresh_records_worker(self, selected_port: int | None) -> None:
-        """Refresh active tunnel records without blocking the UI thread."""
+    def _refresh_worker(self, selected_port: int | None) -> None:
         try:
             records = load_tunnel_records()
         except Exception as exc:
-            self.call_from_thread(self._finish_refresh_error, str(exc))
+            self.call_from_thread(self._on_refresh_error, str(exc))
             return
+        self.call_from_thread(self._on_refresh_done, records, selected_port)
 
-        self.call_from_thread(self._apply_refreshed_records, records, selected_port)
+    def _on_refresh_done(
+        self,
+        records: list[TunnelRecord],
+        selected_port: int | None,
+    ) -> None:
+        table = self.query_one(DataTable)
+        self._records = records
+        self.query_one("#topbar-status", Static).update(
+            build_status_line(len(self._records))
+        )
+        self._rebuilding_table = True
+        table.clear(columns=False)
+        for rec in self._records:
+            hlabel, hstyle = _health_style(rec)
+            table.add_row(
+                str(rec.local_port),
+                rec.job_id or "-",
+                Text(hlabel, style=hstyle),
+                rec.display_model_name(),
+            )
+        if self._records:
+            row = self._find_row_for_port(selected_port)
+            table.move_cursor(row=row, column=0)
+            self._update_info_pane(row)
+            new_port = self._records[row].local_port
+            if new_port != self._output_port:
+                self._reset_output(self._records[row])
+        else:
+            self._update_info_pane(None)
+            if self._output_port is not None:
+                self._reset_output(None)
+        self._rebuilding_table = False
+        self._refresh_pending = False
+
+    def _on_refresh_error(self, error: str) -> None:
+        self.query_one("#topbar-status", Static).update(
+            build_status_line(len(self._records))
+        )
+        self.query_one("#output", Static).update(
+            Text(f"Refresh failed: {error}", style="red")
+        )
+        self._refresh_pending = False
+
+    # ------------------------------------------------------------------
+    # Selection helpers
+    # ------------------------------------------------------------------
 
     def _selected_port(self) -> int | None:
-        """Return the currently selected port before a refresh."""
         table = self.query_one(DataTable)
-        cursor_row = table.cursor_row
-        if cursor_row is None or cursor_row < 0 or cursor_row >= len(self._records):
+        row = table.cursor_row
+        if row is None or row < 0 or row >= len(self._records):
             return None
-        return self._records[cursor_row].local_port
+        return self._records[row].local_port
 
     def _find_row_for_port(self, port: int | None) -> int:
-        """Return the best row to highlight after a refresh."""
         if port is None:
             return 0
-        for index, record in enumerate(self._records):
-            if record.local_port == port:
-                return index
+        for i, rec in enumerate(self._records):
+            if rec.local_port == port:
+                return i
         return 0
 
-    def update_panels(self, row_index: int | None) -> None:
-        """Update detail/command panes for the selected row."""
-        record = None if row_index is None else self._records[row_index]
-        self.query_one("#details", Static).update(format_details_text(record))
-        self.query_one("#commands", Static).update(format_commands_text(record))
-        self.query_one("#output", Static).update(format_output_text(record))
+    def _selected_record(self) -> TunnelRecord | None:
+        table = self.query_one(DataTable)
+        row = table.cursor_row
+        if row is None or row < 0 or row >= len(self._records):
+            return None
+        return self._records[row]
+
+    def _update_info_pane(self, row: int | None) -> None:
+        rec = None if row is None else self._records[row]
+        details = format_details(rec)
+        commands = format_commands(rec)
+        self.query_one("#info", Static).update(Group(details, Text(""), commands))
+
+    def _reset_output(self, rec: TunnelRecord | None) -> None:
+        self._output_port = rec.local_port if rec else None
+        self._output_has_result = False
+        self.query_one("#output", Static).update(format_output(rec))
 
     def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
-        if event.cursor_row is None or event.cursor_row >= len(self._records):
-            self.update_panels(None)
+        if getattr(self, "_rebuilding_table", False):
             return
-        self.update_panels(event.cursor_row)
+        if event.cursor_row is None or event.cursor_row >= len(self._records):
+            self._update_info_pane(None)
+            self._reset_output(None)
+            return
+        rec = self._records[event.cursor_row]
+        self._update_info_pane(event.cursor_row)
+        if rec.local_port != self._output_port:
+            self._reset_output(rec)
 
-    def selected_record(self) -> TunnelRecord | None:
-        """Return the currently selected tunnel record."""
-        table = self.query_one(DataTable)
-        cursor_row = table.cursor_row
-        if cursor_row is None or cursor_row < 0 or cursor_row >= len(self._records):
-            return None
-        return self._records[cursor_row]
+    # ------------------------------------------------------------------
+    # Command execution
+    # ------------------------------------------------------------------
 
-    def run_selected_command(self, key: str) -> None:
-        """Run a predefined validation command for the selected tunnel."""
+    def action_run_command(self, key: str) -> None:
         if self._command_pending:
             self.query_one("#output", Static).update(
-                "A validation command is already running."
+                Text("A command is already running…", style="yellow")
             )
             return
 
-        record = self.selected_record()
-        if record is None:
-            self.query_one("#output", Static).update(format_output_text(None))
+        rec = self._selected_record()
+        if rec is None:
+            self.query_one("#output", Static).update(format_output(None))
             return
 
-        command = next(
-            (spec for spec in build_validation_commands(record) if spec.key == key),
-            None,
+        spec = next(
+            (s for s in build_validation_commands(rec) if s.key == key), None
         )
-        if command is None:
+        if spec is None:
             self.query_one("#output", Static).update(
-                f"No command is available for key '{key}' on port {record.local_port}."
+                Text(f"No command for key '{key}'.", style="yellow")
             )
             return
 
-        self.query_one("#output", Static).update(format_output_text(record, command))
+        self.query_one("#output", Static).update(format_output(rec, spec))
         self._command_pending = True
-        self.run_selected_command_worker(record, command)
+        self._command_worker(rec, spec)
 
     @work(thread=True, group="command", exit_on_error=False)
-    def run_selected_command_worker(
-        self,
-        record: TunnelRecord,
-        command: ValidationCommand,
-    ) -> None:
-        """Run a canned validation command without blocking the UI thread."""
+    def _command_worker(self, record: TunnelRecord, command: ValidationCommand) -> None:
         script = "\n".join(build_validation_environment(record) + [command.command])
         try:
             result = subprocess.run(
-                ["bash", "-lc", script],
+                ["bash", "-c", script],
                 capture_output=True,
                 text=True,
                 check=False,
                 timeout=self.COMMAND_TIMEOUT_SECONDS,
             )
             output = render_command_output(
-                command,
-                result.returncode,
-                result.stdout,
-                result.stderr,
+                command, result.returncode, result.stdout, result.stderr
             )
         except subprocess.TimeoutExpired as exc:
             output = render_command_output(
-                command,
-                -1,
-                exc.stdout or "",
-                (exc.stderr or "").strip() or "Command timed out.",
+                command, -1, exc.stdout or "", (exc.stderr or "").strip() or "Timed out."
             )
         except Exception as exc:
             output = render_command_output(command, -1, "", str(exc))
-        self.call_from_thread(self._finish_command, output)
+        self.call_from_thread(self._on_command_done, output)
 
-    def _apply_refreshed_records(
-        self,
-        records: list[TunnelRecord],
-        selected_port: int | None,
-    ) -> None:
-        """Apply refreshed records from a background worker."""
-        table = self.query_one(DataTable)
-        self._records = records
-        self.query_one("#topbar-status", Static).update(build_status_line(len(self._records)))
-        table.clear(columns=False)
-        for record in self._records:
-            table.add_row(
-                str(record.local_port),
-                record.job_id or "-",
-                format_health(record),
-                record.display_model_name(),
-            )
-
-        if self._records:
-            selected_row = self._find_row_for_port(selected_port)
-            table.move_cursor(row=selected_row, column=0)
-            self.update_panels(selected_row)
-        else:
-            self.update_panels(None)
-        self._refresh_pending = False
-
-    def _finish_refresh_error(self, error: str) -> None:
-        """Reset refresh state after a background refresh failure."""
-        self.query_one("#topbar-status", Static).update(
-            build_status_line(len(self._records))
-        )
-        self.query_one("#output", Static).update(f"Refresh failed: {error}")
-        self._refresh_pending = False
-
-    def _finish_command(self, output: str) -> None:
-        """Update the output pane when a background command finishes."""
+    def _on_command_done(self, output: Group) -> None:
         self.query_one("#output", Static).update(output)
+        self._output_has_result = True
         self._command_pending = False
 
 
