@@ -16,25 +16,41 @@ SESSION_STATE_DIR="${SCRIPT_DIR}/.tunnel-sessions"
 show_help() {
     cat <<'EOF'
 Usage:
-  ./scripts/launch_and_tunnel.sh [--launch-only] [MODEL_NAME] [LOCAL_PORT]
+  ./scripts/launch_and_tunnel.sh [--launch-only] [--keep-job-on-timeout|--cancel-job-on-timeout] [MODEL_NAME] [LOCAL_PORT]
 
 Options:
   --launch-only   Only submit the SLURM job and print the job id (no tunnel; does not cancel on exit).
+  --keep-job-on-timeout
+                  Preserve the remote SLURM job if waiting for start/server readiness times out.
+  --cancel-job-on-timeout
+                  Cancel the remote SLURM job if a wait timeout is hit.
   -h, --help      Show this help.
 
 Notes:
   - MODEL_NAME can also come from scripts/.launch.env (MODEL_NAME=...).
   - LOCAL_PORT is only used when creating the SSH tunnel.
+  - Set JOB_START_TIMEOUT=0 and/or SERVER_READY_TIMEOUT=0 to wait indefinitely.
+  - To recover a tunnel later for an already-launched job, run:
+      ./scripts/print_tunnel_cmd.sh <SLURM_JOB_ID> [LOCAL_PORT]
 EOF
 }
 
 # --- CLI option parsing (keeps positional compatibility) ---
 LAUNCH_ONLY=0
+KEEP_JOB_ON_TIMEOUT=""
 POSITIONAL_ARGS=()
 while [ $# -gt 0 ]; do
     case "$1" in
         --launch-only)
             LAUNCH_ONLY=1
+            shift
+            ;;
+        --keep-job-on-timeout)
+            KEEP_JOB_ON_TIMEOUT=1
+            shift
+            ;;
+        --cancel-job-on-timeout)
+            KEEP_JOB_ON_TIMEOUT=0
             shift
             ;;
         -h|--help)
@@ -78,7 +94,7 @@ _launch_env_vars=(
     MODEL_NAME LOCAL_PORT AUTO_KILL_STALE_TUNNEL
     RSYNC_ENABLED RSYNC_SRC RSYNC_DEST VEC_INF_ENV VEC_INF_CONFIG_DIR_REMOTE
     REMOTE_WORK_DIR REMOTE_ACCOUNT REMOTE_QOS UV_SYNC_ARGS
-    JOB_START_TIMEOUT SERVER_READY_TIMEOUT
+    JOB_START_TIMEOUT SERVER_READY_TIMEOUT KEEP_JOB_ON_TIMEOUT
 )
 _launch_env_override_names=()
 _launch_env_override_values=()
@@ -214,6 +230,9 @@ fi
 # Timeout settings
 JOB_START_TIMEOUT="${JOB_START_TIMEOUT:-900}"          # 15 minutes
 SERVER_READY_TIMEOUT="${SERVER_READY_TIMEOUT:-1200}"   # 20 minutes
+if [ -z "${KEEP_JOB_ON_TIMEOUT}" ]; then
+    KEEP_JOB_ON_TIMEOUT="${KEEP_JOB_ON_TIMEOUT:-1}"
+fi
 
 # Use same signature as vec-inf client uses
 MODEL_READY_SIGNATURE="INFO:     Application startup complete."
@@ -404,6 +423,41 @@ print_remote_err_tail() {
     if [ -n "${REMOTE_ERR_PATH:-}" ]; then
         ssh "${REMOTE_SSH_TARGET}" "if [ -r '${REMOTE_ERR_PATH}' ]; then echo '--- Last 80 lines of ${REMOTE_ERR_PATH} ---'; tail -n 80 '${REMOTE_ERR_PATH}'; fi" 2>/dev/null || true
     fi
+}
+
+format_timeout_label() {
+    local timeout="$1"
+    if [ "${timeout}" -le 0 ]; then
+        echo "disabled"
+        return 0
+    fi
+    echo "${timeout}s"
+}
+
+print_recovery_instructions() {
+    echo ""
+    echo "Recovery:"
+    echo "  ssh ${REMOTE_SSH_TARGET} \"squeue -j ${JOB_ID}\""
+    echo "  ssh ${REMOTE_SSH_TARGET} \"sacct -j ${JOB_ID} --format=JobID,State%20,Elapsed,MaxRSS --units=G -n -P\""
+    echo "  ./scripts/print_tunnel_cmd.sh ${JOB_ID} ${LOCAL_PORT:-5678}"
+    if [ -n "${REMOTE_JOB_DIR:-}" ]; then
+        echo "  ssh ${REMOTE_SSH_TARGET} \"ls -lah '${REMOTE_JOB_DIR}'\""
+    fi
+}
+
+handle_wait_timeout() {
+    local phase="$1"
+    local timeout="$2"
+
+    echo "[ERROR] Timeout while ${phase} (${timeout}s)"
+    if [ "${KEEP_JOB_ON_TIMEOUT}" = "1" ]; then
+        CANCEL_JOB=0
+        echo "[INFO] Preserving remote SLURM job ${JOB_ID}."
+    else
+        echo "[INFO] The remote SLURM job will be cancelled during cleanup."
+    fi
+    print_recovery_instructions
+    exit 1
 }
 
 abort_if_job_ended() {
@@ -615,6 +669,7 @@ if [ "${LAUNCH_ONLY}" = "1" ]; then
     echo "Remote commands:"
     echo "  ssh ${REMOTE_SSH_TARGET} \"squeue -j ${JOB_ID}\""
     echo "  ssh ${REMOTE_SSH_TARGET} \"sacct -j ${JOB_ID} --format=JobID,State%20,Elapsed,MaxRSS --units=G -n -P\""
+    echo "  ./scripts/print_tunnel_cmd.sh ${JOB_ID} ${LOCAL_PORT:-5678}"
     if [ -n "${REMOTE_JOB_DIR:-}" ]; then
         echo "Logs:"
         echo "  ssh ${REMOTE_SSH_TARGET} \"ls -lah '${REMOTE_JOB_DIR}'\""
@@ -623,7 +678,7 @@ if [ "${LAUNCH_ONLY}" = "1" ]; then
     exit 0
 fi
 
-echo "--> Waiting for job to start... (timeout: ${JOB_START_TIMEOUT}s)"
+echo "--> Waiting for job to start... (timeout: $(format_timeout_label "${JOB_START_TIMEOUT}"))"
 elapsed=0
 while true; do
     STATUS=$(ssh "${REMOTE_SSH_TARGET}" "squeue -j $JOB_ID -h -o %T" 2>/dev/null || true)
@@ -636,9 +691,8 @@ while true; do
         exit 1
     fi
 
-    if [ $elapsed -ge $JOB_START_TIMEOUT ]; then
-        echo "[ERROR] Timeout waiting for job to start (${JOB_START_TIMEOUT}s)"
-        exit 1
+    if [ "${JOB_START_TIMEOUT}" -gt 0 ] && [ $elapsed -ge $JOB_START_TIMEOUT ]; then
+        handle_wait_timeout "waiting for job to start" "${JOB_START_TIMEOUT}"
     fi
 
     printf "."
@@ -648,7 +702,7 @@ done
 
 echo ""
 
-echo "--> Waiting for server endpoint... (timeout: ${SERVER_READY_TIMEOUT}s)"
+echo "--> Waiting for server endpoint... (timeout: $(format_timeout_label "${SERVER_READY_TIMEOUT}"))"
 elapsed=0
 SERVER_IP=""
 SERVER_PORT=""
@@ -693,11 +747,8 @@ except Exception:
         fi
     fi
 
-    if [ $elapsed -ge $SERVER_READY_TIMEOUT ]; then
-        echo "[ERROR] Timeout waiting for server endpoint (${SERVER_READY_TIMEOUT}s)"
-        echo "[ERROR] The job may still be initializing. Check logs manually:"
-        echo "        ssh ${REMOTE_SSH_TARGET} 'find ~/.vec-inf-logs -name \"*.${JOB_ID}.json\" -print -quit'"
-        exit 1
+    if [ "${SERVER_READY_TIMEOUT}" -gt 0 ] && [ $elapsed -ge $SERVER_READY_TIMEOUT ]; then
+        handle_wait_timeout "waiting for server endpoint" "${SERVER_READY_TIMEOUT}"
     fi
 
     printf "."
@@ -719,15 +770,8 @@ while true; do
         fi
     fi
 
-    if [ $elapsed -ge $SERVER_READY_TIMEOUT ]; then
-        echo "[ERROR] Timeout waiting for model readiness (${SERVER_READY_TIMEOUT}s)"
-        echo "[ERROR] Check logs manually for progress:"
-        if [ -n "${REMOTE_JOB_DIR:-}" ]; then
-            echo "        ssh ${REMOTE_SSH_TARGET} 'ls ${REMOTE_JOB_DIR}'"
-        else
-            echo "        ssh ${REMOTE_SSH_TARGET} 'find ~/.vec-inf-logs -name \"*.${JOB_ID}.err\" -print -quit'"
-        fi
-        exit 1
+    if [ "${SERVER_READY_TIMEOUT}" -gt 0 ] && [ $elapsed -ge $SERVER_READY_TIMEOUT ]; then
+        handle_wait_timeout "waiting for model readiness" "${SERVER_READY_TIMEOUT}"
     fi
 
     printf "."

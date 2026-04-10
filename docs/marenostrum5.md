@@ -61,6 +61,20 @@ To inspect active local tunnels, recover the exact served model id, and print ca
 ./scripts/tunnel_tui.py
 ```
 
+If queue times are long, set `JOB_START_TIMEOUT=0` in `scripts/.launch.env` to wait indefinitely for the job to leave `PENDING`. Likewise, `SERVER_READY_TIMEOUT=0` disables the endpoint/readiness timeout after the job starts.
+
+If a wait timeout is hit, `launch_and_tunnel.sh` now keeps the remote job alive by default and prints recovery commands, including:
+
+```bash
+./scripts/print_tunnel_cmd.sh <SLURM_JOB_ID> [LOCAL_PORT]
+```
+
+You can also skip waiting entirely and just submit the job:
+
+```bash
+./scripts/launch_and_tunnel.sh --launch-only Llama-3.2-3B-Instruct
+```
+
 ## Manual configuration
 
 If you prefer not to use the wizard:
@@ -114,6 +128,8 @@ To print a tunnel command for an already-running job:
 ```bash
 ./scripts/print_tunnel_cmd.sh <SLURM_JOB_ID> [LOCAL_PORT]
 ```
+
+This is the recovery path after `--launch-only`, or after `launch_and_tunnel.sh` times out while preserving the job.
 
 ## Notes
 

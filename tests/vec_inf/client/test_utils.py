@@ -196,6 +196,37 @@ def test_load_config_mn5_profile_uses_gpt_oss_weights_override(
     )
 
 
+def test_load_config_mn5_profile_includes_gemma4_agentic_profile(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The MN5 profile should expose the Gemma 4 agentic text-first preset."""
+    mn5_config_dir = (
+        Path(__file__).resolve().parents[3] / "vec_inf" / "config" / "marenostrum5"
+    )
+
+    with monkeypatch.context() as m:
+        m.setenv("VEC_INF_CONFIG_DIR", str(mn5_config_dir))
+        configs = load_config()
+
+    config_map = {model.model_name: model for model in configs}
+    assert "gemma-4-31B-it" in config_map
+
+    gemma = config_map["gemma-4-31B-it"]
+    assert gemma.model_type == "VLM"
+    assert gemma.gpus_per_node == 4
+    assert gemma.num_nodes == 1
+    assert gemma.vllm_args.get("--tensor-parallel-size") == 4
+    assert gemma.vllm_args.get("--max-model-len") == 65536
+    assert gemma.vllm_args.get("--kv-cache-dtype") == "fp8_e4m3"
+    assert gemma.vllm_args.get("--reasoning-parser") == "gemma4"
+    assert gemma.vllm_args.get("--tool-call-parser") == "gemma4"
+    assert gemma.vllm_args.get("--limit-mm-per-prompt") == "image=0,audio=0"
+    assert (
+        gemma.image_path
+        == "/gpfs/scratch/bsc70/singularity/vllm_openai_0.19.0.sif"
+    )
+
+
 def test_load_config_with_user_override(tmp_path, monkeypatch):
     """Test VEC_INF_CONFIG_DIR uses user models.yaml as the source config."""
     # Create user config directory and file

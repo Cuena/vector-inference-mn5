@@ -61,6 +61,8 @@ To inspect currently accessible local tunnels, recover the exact served model id
 ./scripts/tunnel_tui.py
 ```
 
+For long queue times, set `JOB_START_TIMEOUT=0` in `scripts/.launch.env` to wait indefinitely, or use `--launch-only` and attach later with `./scripts/print_tunnel_cmd.sh <SLURM_JOB_ID> [LOCAL_PORT]`. If `launch_and_tunnel.sh` hits a wait timeout, it now preserves the remote job by default and prints the recovery command.
+
 ### Manual fallback
 
 If you prefer to edit files yourself instead of using the wizard:
