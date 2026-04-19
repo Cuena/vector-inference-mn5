@@ -82,10 +82,6 @@ def resolve_preferred_model_name(last_launched_model: str | None) -> str:
 
 
 _launch_env_values = parse_launch_env(LAUNCH_ENV_PATH)
-apply_launch_env_defaults(_launch_env_values)
-
-if "VEC_INF_CONFIG_DIR" not in os.environ and DEFAULT_CONFIG_DIR.exists():
-    os.environ["VEC_INF_CONFIG_DIR"] = str(DEFAULT_CONFIG_DIR)
 
 from textual.app import App, ComposeResult
 from textual.containers import Container, Horizontal, Vertical, VerticalScroll
@@ -901,6 +897,9 @@ def run_launch(request: LaunchRequest) -> None:
 
 
 def main() -> None:
+    apply_launch_env_defaults(_launch_env_values)
+    if "VEC_INF_CONFIG_DIR" not in os.environ and DEFAULT_CONFIG_DIR.exists():
+        os.environ["VEC_INF_CONFIG_DIR"] = str(DEFAULT_CONFIG_DIR)
     app = LaunchTui()
     result = app.run()
     if isinstance(result, LaunchRequest):

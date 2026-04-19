@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import sys
 from pathlib import Path
 
@@ -34,6 +35,17 @@ def test_parse_launch_env_reads_quoted_values(tmp_path: Path) -> None:
     assert values["REMOTE_USER"] == "alice"
     assert values["LOCAL_PORT"] == "5678"
     assert values["REMOTE_QOS"] == ""
+
+
+def test_import_does_not_mutate_process_environment(monkeypatch) -> None:
+    """Importing the TUI module should not rewrite unrelated process env."""
+    monkeypatch.delenv("VEC_INF_PROJECT_ROOT", raising=False)
+    monkeypatch.delenv("VEC_INF_CONFIG_DIR", raising=False)
+
+    _load_launch_tui_module()
+
+    assert "VEC_INF_PROJECT_ROOT" not in os.environ
+    assert "VEC_INF_CONFIG_DIR" not in os.environ
 
 
 def test_derive_project_root_prefers_config_dir_remote() -> None:
@@ -109,7 +121,7 @@ def test_resolve_effective_launch_settings_matches_shell_script_defaults() -> No
     assert settings.remote_qos is None
 
 
-def test_effective_launch_helpers_prefer_script_overrides() -> None:
+def test_effective_launch_helpers_prefer_script_overrides(monkeypatch) -> None:
     """Launch previews should show shell-script overrides over profile defaults."""
     module = _load_launch_tui_module()
     settings = module.EffectiveLaunchSettings(
@@ -121,6 +133,7 @@ def test_effective_launch_helpers_prefer_script_overrides() -> None:
         remote_account="bsc70",
         remote_qos="acc_debug",
     )
+    monkeypatch.setenv("VEC_INF_CONFIG_DIR", str(module.DEFAULT_CONFIG_DIR))
     config = module.load_config()[0]
 
     assert module._effective_work_dir(config, settings) == "/scratch/alice/vec-inf-work"

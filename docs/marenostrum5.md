@@ -17,10 +17,10 @@ cd vector-inference-public
 uv run vec-inf-mn5-wizard
 ```
 
-The wizard writes `scripts/.launch.env`, explains each setting, and pre-fills defaults derived from your username and the current repo name. This setup path is vLLM-only for now. In the common case, you only need to set:
+The wizard writes `scripts/.launch.env` and pre-fills defaults derived from your username and the current repo name. In the common case, you only need to set:
 
 - `REMOTE_USER`: your BSC login username.
-- `REMOTE_ACCOUNT`: defaults to `bsc70` in the wizard because that is the current team example in this repo.
+- `REMOTE_ACCOUNT`: defaults to `bsc70`.
 - `VEC_INF_VLLM_IMAGE_PATH`: defaults to `/gpfs/scratch/bsc70/singularity/vllm_openai_0.18.0.sif`.
 - `VEC_INF_MODEL_WEIGHTS_PARENT_DIR`: defaults to `/gpfs/scratch/bsc70/hpai/storage/projects/heka/models`.
 
@@ -63,7 +63,7 @@ To inspect active local tunnels, recover the exact served model id, and print ca
 
 If queue times are long, set `JOB_START_TIMEOUT=0` in `scripts/.launch.env` to wait indefinitely for the job to leave `PENDING`. Likewise, `SERVER_READY_TIMEOUT=0` disables the endpoint/readiness timeout after the job starts.
 
-If a wait timeout is hit, `launch_and_tunnel.sh` now keeps the remote job alive by default and prints recovery commands, including:
+If a wait timeout is hit, `launch_and_tunnel.sh` keeps the remote job alive by default and prints recovery commands, including:
 
 ```bash
 ./scripts/print_tunnel_cmd.sh <SLURM_JOB_ID> [LOCAL_PORT]
@@ -95,6 +95,8 @@ cp scripts/.launch.env.example scripts/.launch.env
 3. The tracked MN5 profile at [`vec_inf/config/marenostrum5/environment.yaml`](../vec_inf/config/marenostrum5/environment.yaml) reads those values from `.launch.env`, so most users do not need to modify the YAML directly.
 
 4. Only edit [`vec_inf/config/marenostrum5/models.yaml`](../vec_inf/config/marenostrum5/models.yaml) when a specific model needs a different image path or runtime override.
+
+If you are upgrading from an older local setup that relied on `VEC_INF_STORAGE_USER` or on a user-owned fallback SIF, rerun the wizard or set `VEC_INF_VLLM_IMAGE_PATH` explicitly in `scripts/.launch.env`. The tracked MN5 profile now defaults to the shared `vllm_openai_0.18.0.sif` and does not read `VEC_INF_STORAGE_USER`.
 
 ## gpt-oss on MN5
 
@@ -129,11 +131,10 @@ To print a tunnel command for an already-running job:
 ./scripts/print_tunnel_cmd.sh <SLURM_JOB_ID> [LOCAL_PORT]
 ```
 
-This is the recovery path after `--launch-only`, or after `launch_and_tunnel.sh` times out while preserving the job.
+Use this after `--launch-only`, or after `launch_and_tunnel.sh` times out while preserving the job.
 
 ## Notes
 
 - The scripts enforce MN5 routing when using `*.bsc.es` hosts.
-- Keep secrets and user-specific paths only in `scripts/.launch.env` (which is gitignored).
+- Keep secrets and user-specific paths only in `scripts/.launch.env`.
 - Set explicit `RSYNC_DEST`/`VEC_INF_ENV`/`REMOTE_WORK_DIR` if you want side-by-side versions (for example, `-mn5`) without reusing old paths.
-- The wizard-backed `.launch.env` values are exported into the tracked MN5 profile, which keeps the versioned YAML generic for the team.

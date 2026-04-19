@@ -12,7 +12,7 @@ This repository provides an easy-to-use solution to run inference servers on [Sl
 
 ## MareNostrum5 setup
 
-This repository includes MN5-ready helper scripts, a public MN5 profile, and a setup wizard that writes the launcher config for you.
+This repository includes MN5 helper scripts, an MN5 config profile, and a setup wizard that writes the launcher config for you.
 
 ### Recommended first run
 
@@ -29,11 +29,11 @@ cd vector-inference-public
 uv run vec-inf-mn5-wizard
 ```
 
-The wizard uses `rich`, explains each setting, writes [`scripts/.launch.env`](scripts/.launch.env.example) for you, and pre-fills team-oriented defaults for the vLLM path such as:
+The wizard writes `scripts/.launch.env` for you and pre-fills defaults such as:
 - the remote checkout under `/home/bsc/<REMOTE_USER>/repos/<repo-name>`
 - the remote `vec-inf` virtualenv at `${RSYNC_DEST}/.venv`
-- the bundled MN5 config dir at `${RSYNC_DEST}/vec_inf/config/marenostrum5`
-- the current team weights root `/gpfs/scratch/bsc70/hpai/storage/projects/heka/models`
+- the MN5 config dir at `${RSYNC_DEST}/vec_inf/config/marenostrum5`
+- the default weights root `/gpfs/scratch/bsc70/hpai/storage/projects/heka/models`
 - a lightweight smoke-test model: `Llama-3.2-3B-Instruct`
 
 Before running anything, the wizard shows the exact command line and the expected side effects. After writing the config, it can optionally:
@@ -63,7 +63,7 @@ To inspect currently accessible local tunnels, recover the exact served model id
 ./scripts/tunnel_tui.py
 ```
 
-For long queue times, set `JOB_START_TIMEOUT=0` in `scripts/.launch.env` to wait indefinitely, or use `--launch-only` and attach later with `./scripts/print_tunnel_cmd.sh <SLURM_JOB_ID> [LOCAL_PORT]`. If `launch_and_tunnel.sh` hits a wait timeout, it now preserves the remote job by default and prints the recovery command.
+For long queue times, set `JOB_START_TIMEOUT=0` in `scripts/.launch.env` to wait indefinitely, or use `--launch-only` and attach later with `./scripts/print_tunnel_cmd.sh <SLURM_JOB_ID> [LOCAL_PORT]`. If `launch_and_tunnel.sh` times out, it keeps the remote job by default and prints the recovery command.
 
 ### Manual fallback
 
@@ -84,6 +84,8 @@ The important fields are:
 - `VEC_INF_MODEL_WEIGHTS_PARENT_DIR`: parent directory containing model weights.
 
 The tracked MN5 profile in [`vec_inf/config/marenostrum5/environment.yaml`](vec_inf/config/marenostrum5/environment.yaml) now reads those path values from `.launch.env`, so most users do not need to edit the YAML directly. This onboarding flow configures vLLM only. You only need to touch [`vec_inf/config/marenostrum5/models.yaml`](vec_inf/config/marenostrum5/models.yaml) when a specific model should use a different image or runtime override.
+
+Upgrade note for older MN5 configs: the tracked profile no longer uses `VEC_INF_STORAGE_USER`, and its fallback image path now points at the shared `vllm_openai_0.18.0.sif`. If your previous setup relied on a user-owned SIF or on `$VEC_INF_STORAGE_USER`-based paths, rerun the wizard or set `VEC_INF_VLLM_IMAGE_PATH` explicitly in `scripts/.launch.env`.
 
 To launch `gpt-oss-120b-0109` on MN5, make sure `VEC_INF_VLLM_IMAGE_PATH` points at the shared SIF (the wizard default is `vllm_openai_0.18.0.sif`). Then run:
 
