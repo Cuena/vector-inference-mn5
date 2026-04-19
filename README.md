@@ -52,6 +52,8 @@ Before running anything, the wizard shows the exact command line and the expecte
 http://localhost:5678/v1
 ```
 
+Optional vLLM auth: if `VEC_INF_API_KEY` is already exported in the remote cluster job environment, generated vLLM launches will add `--api-key "$VEC_INF_API_KEY"` automatically. If `VEC_INF_API_KEY` is unset, the server launches without API-key protection.
+
 To inspect currently accessible local tunnels, recover the exact served model id from `/v1/models`, and print canned validation calls:
 
 ```bash

@@ -215,7 +215,7 @@ if [ -z "${SERVER_HOST:-}" ] || [ -z "${SERVER_PORT:-}" ]; then
 fi
 
 SERVER_IP="${SERVER_HOST}"
-ACTUAL_IP=$(ssh "${REMOTE_SSH_TARGET}" "getent hosts ${SERVER_HOST} 2>/dev/null | awk '{print \\$1}' | head -1" || true)
+ACTUAL_IP=$(ssh "${REMOTE_SSH_TARGET}" "getent hosts ${SERVER_HOST} 2>/dev/null | awk '{print \$1}' | head -1" || true)
 ACTUAL_IP=$(echo "${ACTUAL_IP}" | tr -d '\r' | head -n1)
 if [ -n "${ACTUAL_IP}" ]; then
     SERVER_IP="${ACTUAL_IP}"

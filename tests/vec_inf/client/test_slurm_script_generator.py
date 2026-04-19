@@ -266,6 +266,8 @@ class TestSlurmScriptGenerator:
         assert "--tensor-parallel-size 4" in launch_cmd
         assert "--max-model-len 8192" in launch_cmd
         assert "--enforce-eager" in launch_cmd
+        assert '${VEC_INF_API_KEY:+--api-key}' in launch_cmd
+        assert '${VEC_INF_API_KEY:+"$VEC_INF_API_KEY"}' in launch_cmd
 
     def test_generate_launch_cmd_sglang(self, basic_params):
         """Test SGLang launch command generation."""
@@ -728,6 +730,20 @@ class TestBatchSlurmScriptGenerator:
         # Verify the script content includes SGLang command
         call_args = mock_write_text.call_args[0][0]
         assert "sglang.launch_server" in call_args
+
+    @patch("pathlib.Path.touch")
+    @patch("pathlib.Path.write_text")
+    def test_generate_model_launch_script_vllm_uses_optional_api_key_env_var(
+        self, mock_write_text, mock_touch, batch_params
+    ):
+        """Batch vLLM launch scripts should reference the cluster API key env var."""
+        generator = BatchSlurmScriptGenerator(batch_params)
+        generator._generate_model_launch_script("model1")
+
+        call_args = mock_write_text.call_args[0][0]
+        assert '${VEC_INF_API_KEY:+--api-key}' in call_args
+        assert '${VEC_INF_API_KEY:+"$VEC_INF_API_KEY"}' in call_args
+        assert "api-key my-secret" not in call_args
 
     @patch("pathlib.Path.touch")
     @patch("pathlib.Path.write_text")

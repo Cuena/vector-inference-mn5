@@ -194,6 +194,25 @@ models:
       --limit-mm-per-prompt: image=0,audio=0
       --async-scheduling: true
 
+  Qwen3-Coder-Next:
+    model_family: Qwen3
+    model_variant: Coder-Next
+    model_type: LLM
+    gpus_per_node: 4
+    num_nodes: 1
+    vocab_size: 151936
+    venv: "singularity"
+    bind: "/home/bsc/$USER"
+    vllm_args:
+      --attention-backend: flashinfer
+      --tensor-parallel-size: 4
+      --enable-auto-tool-choice: true
+      --tool-call-parser: qwen3_coder
+      --max-model-len: 29000
+      --gpu-memory-utilization: 0.8
+      --config: "@repo/compilation_configs/qwen_single.yaml"
+
+
 # =========================================================================
 # Untested / user-specific profiles
 #
@@ -451,22 +470,7 @@ models:
 #      --enable-auto-tool-choice: true
 #      --tool-call-parser: qwen3_coder
 
-#  Qwen3-Coder-Next:
-#    model_family: Qwen3
-#    model_variant: Coder-Next
-#    model_type: LLM
-#    gpus_per_node: 4
-#    num_nodes: 1
-#    vocab_size: 151936
-#    venv: "singularity"
-#    vllm_args:
-#      --attention-backend: flashinfer
-#      --tensor-parallel-size: 4
-#      --enable-auto-tool-choice: true
-#      --tool-call-parser: qwen3_coder
-#      --max-model-len: 29000
-#      --gpu-memory-utilization: 0.8
-#      --config: "@repo/compilation_configs/qwen_single.yaml"
+
 
 #  Qwen3-Next-80B-A3B-Instruct:
 #    model_family: Qwen3

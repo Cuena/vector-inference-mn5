@@ -227,6 +227,31 @@ def test_load_config_mn5_profile_includes_gemma4_agentic_profile(
     )
 
 
+def test_load_config_mn5_profile_includes_qwen3_coder_next(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The MN5 profile should expose Qwen3-Coder-Next to the TUI."""
+    mn5_config_dir = (
+        Path(__file__).resolve().parents[3] / "vec_inf" / "config" / "marenostrum5"
+    )
+
+    with monkeypatch.context() as m:
+        m.setenv("VEC_INF_CONFIG_DIR", str(mn5_config_dir))
+        configs = load_config()
+
+    config_map = {model.model_name: model for model in configs}
+    assert "Qwen3-Coder-Next" in config_map
+
+    qwen = config_map["Qwen3-Coder-Next"]
+    assert qwen.model_family == "Qwen3"
+    assert qwen.model_variant == "Coder-Next"
+    assert qwen.model_type == "LLM"
+    assert qwen.gpus_per_node == 4
+    assert qwen.num_nodes == 1
+    assert qwen.bind == "/home/bsc/$USER"
+    assert qwen.vllm_args.get("--tool-call-parser") == "qwen3_coder"
+
+
 def test_load_config_with_user_override(tmp_path, monkeypatch):
     """Test VEC_INF_CONFIG_DIR uses user models.yaml as the source config."""
     # Create user config directory and file

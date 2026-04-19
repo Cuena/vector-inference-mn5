@@ -287,6 +287,9 @@ class SlurmScriptGenerator:
         if self.is_multinode and self.engine == "sglang":
             return self._generate_multinode_sglang_launch_cmd()
 
+        if self.engine == "vllm":
+            return self._generate_vllm_launch_cmd()
+
         launch_cmd = ["\n"]
         if self.use_container:
             image_path = self.params.get("image_path") or IMAGE_PATH[self.engine]
@@ -309,6 +312,53 @@ class SlurmScriptGenerator:
                 launch_cmd.append(f"    {arg} \\")
             else:
                 launch_cmd.append(f"    {arg} {value} \\")
+
+        # A known bug in vLLM requires setting backend to ray for multi-node
+        # Remove this when the bug is fixed
+        if (
+            self.is_multinode
+            and "--distributed-executor-backend" not in self.params["engine_args"]
+        ):
+            launch_cmd.append("    --distributed-executor-backend ray \\")
+
+        return "\n".join(launch_cmd).rstrip(" \\")
+
+    def _generate_vllm_launch_cmd(self) -> str:
+        """Generate the vLLM launch command with optional API key auth.
+
+        Returns
+        -------
+        str
+            vLLM server launch command.
+        """
+        launch_cmd = ["\n"]
+        if self.use_container:
+            image_path = self.params.get("image_path") or IMAGE_PATH[self.engine]
+            launch_cmd.append(
+                SLURM_SCRIPT_TEMPLATE["container_command"].format(
+                    env_str=self.env_str,
+                    image_path=image_path,
+                )
+            )
+
+        launch_cmd.append(
+            "\n".join(SLURM_SCRIPT_TEMPLATE["launch_cmd"]["vllm"]).format(
+                model_weights_path=self.model_weights_path,
+                model_name=self.params["model_name"],
+            )
+        )
+
+        for arg, value in self.params["engine_args"].items():
+            if isinstance(value, bool):
+                launch_cmd.append(f"    {arg} \\")
+            else:
+                launch_cmd.append(f"    {arg} {value} \\")
+
+        # If a key is already exported in the cluster job environment, enable
+        # vLLM's bearer-token auth without writing the secret to generated files.
+        launch_cmd.append(
+            '    ${VEC_INF_API_KEY:+--api-key} ${VEC_INF_API_KEY:+"$VEC_INF_API_KEY"} \\'
+        )
 
         # A known bug in vLLM requires setting backend to ray for multi-node
         # Remove this when the bug is fixed
@@ -468,26 +518,39 @@ class BatchSlurmScriptGenerator:
                     image_path=IMAGE_PATH[model_params["engine"]],
                 )
             )
-        script_content.append(
-            "\n".join(
-                BATCH_MODEL_LAUNCH_SCRIPT_TEMPLATE["launch_cmd"][model_params["engine"]]
-            ).format(
-                model_weights_path=model_params["model_weights_path"],
-                model_name=model_name,
-            )
-        )
-        for arg, value in model_params["engine_args"].items():
-            if isinstance(value, bool):
-                script_content.append(f"    {arg} \\")
-            else:
-                script_content.append(f"    {arg} {value} \\")
-        script_content[-1] = script_content[-1].rstrip(" \\")
+        script_content.extend(self._generate_batch_model_launch_lines(model_name))
         # Write the bash script to the log directory
         launch_script_path = self._write_to_log_dir(
             script_content, f"launch_{model_name}.sh"
         )
         self.script_paths.append(launch_script_path)
         return launch_script_path
+
+    def _generate_batch_model_launch_lines(self, model_name: str) -> list[str]:
+        """Generate launch lines for an individual batch model script."""
+        model_params = self.params["models"][model_name]
+        launch_lines = [
+            "\n".join(
+                BATCH_MODEL_LAUNCH_SCRIPT_TEMPLATE["launch_cmd"][model_params["engine"]]
+            ).format(
+                model_weights_path=model_params["model_weights_path"],
+                model_name=model_name,
+            )
+        ]
+
+        for arg, value in model_params["engine_args"].items():
+            if isinstance(value, bool):
+                launch_lines.append(f"    {arg} \\")
+            else:
+                launch_lines.append(f"    {arg} {value} \\")
+
+        if model_params["engine"] == "vllm":
+            launch_lines.append(
+                '    ${VEC_INF_API_KEY:+--api-key} ${VEC_INF_API_KEY:+"$VEC_INF_API_KEY"} \\'
+            )
+
+        launch_lines[-1] = launch_lines[-1].rstrip(" \\")
+        return launch_lines
 
     def _generate_batch_slurm_script_shebang(self) -> str:
         """Generate the shebang for batch mode Slurm script.

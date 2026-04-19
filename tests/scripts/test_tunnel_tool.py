@@ -19,6 +19,15 @@ def _load_tunnel_tool_module():
     return module
 
 
+def test_print_tunnel_script_escapes_remote_awk_field_reference() -> None:
+    """The shell should pass awk's $1 to the remote host unchanged."""
+    script_path = Path(__file__).resolve().parents[2] / "scripts" / "print_tunnel_cmd.sh"
+    script_text = script_path.read_text(encoding="utf-8")
+
+    assert "awk '{print \\$1}'" in script_text
+    assert "awk '{print \\\\$1}'" not in script_text
+
+
 def test_parse_local_forward_spec_supports_compact_and_bound_forms() -> None:
     """SSH -L parsing should support common forwarding syntaxes."""
     module = _load_tunnel_tool_module()
