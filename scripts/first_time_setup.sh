@@ -120,7 +120,7 @@ REMOTE_INTERNET_SSH_TARGET="${REMOTE_USER}@${REMOTE_INTERNET_HOST}"
 RSYNC_SRC="${RSYNC_SRC:-.}"
 RSYNC_DEST="${RSYNC_DEST:-}"
 if [ -z "${RSYNC_DEST}" ]; then
-    RSYNC_DEST="/home/bsc/${REMOTE_USER}/repos/vector-inference"
+    RSYNC_DEST="/home/bsc/${REMOTE_USER}/repos/vector-inference-mn5"
 fi
 
 UV_SYNC_ARGS="${UV_SYNC_ARGS:---frozen}"

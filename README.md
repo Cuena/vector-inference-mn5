@@ -19,8 +19,8 @@ This repository includes MN5 helper scripts, an MN5 config profile, and a setup 
 1. Clone and enter the repository:
 
 ```bash
-git clone git@github.com:Cuena/vector-inference-mn5.git vector-inference-public
-cd vector-inference-public
+git clone git@github.com:Cuena/vector-inference-mn5.git vector-inference-mn5
+cd vector-inference-mn5
 ```
 
 2. Run the wizard:
@@ -38,9 +38,15 @@ The wizard writes `scripts/.launch.env` for you and pre-fills defaults such as:
 
 Before running anything, the wizard shows the exact command line and the expected side effects. After writing the config, it can optionally:
 - run [`./scripts/first_time_setup.sh`](scripts/first_time_setup.sh)
-- launch `Llama-3.2-3B-Instruct` through [`./scripts/launch_and_tunnel.sh`](scripts/launch_and_tunnel.sh)
+- launch `Llama-3.2-3B-Instruct`
 
-3. If you skip the optional launch, you can run it later:
+3. If you skip the optional launch, use the TUI:
+
+```bash
+./scripts/launch_tui.py
+```
+
+Direct launch:
 
 ```bash
 ./scripts/launch_and_tunnel.sh Llama-3.2-3B-Instruct 5678
@@ -87,7 +93,13 @@ The tracked MN5 profile in [`vec_inf/config/marenostrum5/environment.yaml`](vec_
 
 Upgrade note for older MN5 configs: the tracked profile no longer uses `VEC_INF_STORAGE_USER`, and its fallback image path now points at the shared `vllm_openai_0.18.0.sif`. If your previous setup relied on a user-owned SIF or on `$VEC_INF_STORAGE_USER`-based paths, rerun the wizard or set `VEC_INF_VLLM_IMAGE_PATH` explicitly in `scripts/.launch.env`.
 
-To launch `gpt-oss-120b-0109` on MN5, make sure `VEC_INF_VLLM_IMAGE_PATH` points at the shared SIF (the wizard default is `vllm_openai_0.18.0.sif`). Then run:
+To launch `gpt-oss-120b-0109` on MN5, make sure `VEC_INF_VLLM_IMAGE_PATH` points at the shared SIF (the wizard default is `vllm_openai_0.18.0.sif`). Then use the TUI:
+
+```bash
+./scripts/launch_tui.py
+```
+
+Direct launch:
 
 ```bash
 ./scripts/launch_and_tunnel.sh gpt-oss-120b-0109 5678

@@ -14,7 +14,7 @@ Thank you for your interest in contributing to Vector Inference! This guide will
 1. Clone the repository:
    ```bash
    git clone git@github.com:Cuena/vector-inference-mn5.git
-   cd vector-inference
+   cd vector-inference-mn5
    ```
 
 2. Install development dependencies:

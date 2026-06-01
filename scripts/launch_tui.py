@@ -658,7 +658,7 @@ def resolve_effective_launch_settings(
     remote_user = values.get("REMOTE_USER", "").strip()
     rsync_dest = values.get("RSYNC_DEST", "").strip()
     if not rsync_dest and remote_user:
-        rsync_dest = f"/home/bsc/{remote_user}/repos/vector-inference"
+        rsync_dest = f"/home/bsc/{remote_user}/repos/vector-inference-mn5"
 
     vec_inf_env = values.get("VEC_INF_ENV", "").strip()
     if not vec_inf_env and rsync_dest:

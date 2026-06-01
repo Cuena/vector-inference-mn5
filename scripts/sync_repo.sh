@@ -80,7 +80,7 @@ REMOTE_SSH_TARGET="${REMOTE_USER}@${REMOTE_TRANSFER_HOST}"
 RSYNC_SRC="${RSYNC_SRC:-.}"
 RSYNC_DEST="${RSYNC_DEST:-}"
 if [ -z "${RSYNC_DEST}" ]; then
-    RSYNC_DEST="/home/bsc/${REMOTE_USER}/repos/vector-inference"
+    RSYNC_DEST="/home/bsc/${REMOTE_USER}/repos/vector-inference-mn5"
 fi
 REMOTE_WORK_DIR="${REMOTE_WORK_DIR:-}"
 if [ "${REMOTE_WORK_DIR}" = "RSYNC_DEST" ]; then

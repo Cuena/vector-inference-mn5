@@ -7,8 +7,8 @@ This page documents a local-to-MN5 workflow where `vec-inf` runs on MareNostrum5
 1. Clone and enter the repository:
 
 ```bash
-git clone git@github.com:Cuena/vector-inference-mn5.git vector-inference-public
-cd vector-inference-public
+git clone git@github.com:Cuena/vector-inference-mn5.git vector-inference-mn5
+cd vector-inference-mn5
 ```
 
 2. Run the setup wizard:
@@ -40,7 +40,13 @@ Dry-run preview (no remote writes):
 ./scripts/first_time_setup.sh --dry-run
 ```
 
-4. Launch a model and open a local tunnel:
+4. Launch from the TUI:
+
+```bash
+./scripts/launch_tui.py
+```
+
+Direct launch:
 
 ```bash
 ./scripts/launch_and_tunnel.sh Llama-3.2-3B-Instruct 5678
@@ -100,7 +106,13 @@ If you are upgrading from an older local setup that relied on `VEC_INF_STORAGE_U
 
 ## gpt-oss on MN5
 
-For `gpt-oss-120b-0109`, make sure `VEC_INF_VLLM_IMAGE_PATH` points at the shared SIF (the wizard default is `vllm_openai_0.18.0.sif`). Then launch:
+For `gpt-oss-120b-0109`, make sure `VEC_INF_VLLM_IMAGE_PATH` points at the shared SIF (the wizard default is `vllm_openai_0.18.0.sif`). Then use the TUI:
+
+```bash
+./scripts/launch_tui.py
+```
+
+Direct launch:
 
 ```bash
 ./scripts/launch_and_tunnel.sh gpt-oss-120b-0109 5678

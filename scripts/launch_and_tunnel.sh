@@ -168,7 +168,7 @@ RSYNC_SRC="${RSYNC_SRC:-.}"
 RSYNC_DEST="${RSYNC_DEST:-}"
 
 if [ -z "${RSYNC_DEST}" ]; then
-    RSYNC_DEST="/home/bsc/${REMOTE_USER}/repos/vector-inference"
+    RSYNC_DEST="/home/bsc/${REMOTE_USER}/repos/vector-inference-mn5"
 fi
 
 # Optional: override vec-inf work-dir (SBATCH --chdir)

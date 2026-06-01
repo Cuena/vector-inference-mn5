@@ -115,9 +115,9 @@ def test_resolve_effective_launch_settings_matches_shell_script_defaults() -> No
     )
 
     assert settings.remote_launch_host == "alogin1.bsc.es"
-    assert settings.rsync_dest == "/home/bsc/alice/repos/vector-inference"
-    assert settings.vec_inf_env == "/home/bsc/alice/repos/vector-inference/.venv"
-    assert settings.remote_work_dir == "/home/bsc/alice/repos/vector-inference"
+    assert settings.rsync_dest == "/home/bsc/alice/repos/vector-inference-mn5"
+    assert settings.vec_inf_env == "/home/bsc/alice/repos/vector-inference-mn5/.venv"
+    assert settings.remote_work_dir == "/home/bsc/alice/repos/vector-inference-mn5"
     assert settings.remote_qos is None
 
 
