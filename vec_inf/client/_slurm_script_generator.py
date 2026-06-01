@@ -4,6 +4,7 @@ This module provides functionality to generate Slurm scripts for running inferen
 servers in both single-node and multi-node configurations.
 """
 
+import shlex
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -114,6 +115,15 @@ class SlurmScriptGenerator:
         if self.use_container:
             # Format for container: --env KEY1=VAL1,KEY2=VAL2
             env_pairs = [f"{key}={val}" for key, val in env_dict.items()]
+            env_pairs.extend(
+                [
+                    "VLLM_HOST_IP=${VLLM_HOST_IP:-}",
+                    "HOST_IP=${HOST_IP:-}",
+                    "RAY_ADDRESS=${RAY_ADDRESS:-}",
+                    "RAY_NODE_IP_ADDRESS=${RAY_NODE_IP_ADDRESS:-}",
+                    "RAY_OVERRIDE_NODE_IP_ADDRESS=${RAY_OVERRIDE_NODE_IP_ADDRESS:-}",
+                ]
+            )
             return f"--env {','.join(env_pairs)}"
         # Format for shell: export KEY1=VAL1\nexport KEY2=VAL2
         export_lines = [f"export {key}={val}" for key, val in env_dict.items()]
@@ -144,6 +154,11 @@ class SlurmScriptGenerator:
             unset_lines.append(f"unset {var_name}")
 
         return unset_lines
+
+    @staticmethod
+    def _format_engine_arg_value(value: Any) -> str:
+        """Format an engine argument value for safe use in generated bash."""
+        return shlex.quote(str(value))
 
     def _generate_script_content(self) -> str:
         """Generate the complete Slurm script content.
@@ -239,8 +254,11 @@ class SlurmScriptGenerator:
         )
 
         if self.is_multinode and self.engine == "vllm":
+            template_key = (
+                "multinode_vllm_common" if self.use_container else "multinode_vllm"
+            )
             server_setup_str = "\n".join(
-                SLURM_SCRIPT_TEMPLATE["server_setup"]["multinode_vllm"]
+                SLURM_SCRIPT_TEMPLATE["server_setup"][template_key]
             ).format(gpus_per_node=self.params["gpus_per_node"])
             if self.use_container:
                 image_path = self.params.get("image_path") or IMAGE_PATH[self.engine]
@@ -287,6 +305,9 @@ class SlurmScriptGenerator:
         if self.is_multinode and self.engine == "sglang":
             return self._generate_multinode_sglang_launch_cmd()
 
+        if self.is_multinode and self.engine == "vllm" and self.use_container:
+            return self._generate_multinode_vllm_container_launch_cmd()
+
         if self.engine == "vllm":
             return self._generate_vllm_launch_cmd()
 
@@ -311,7 +332,9 @@ class SlurmScriptGenerator:
             if isinstance(value, bool):
                 launch_cmd.append(f"    {arg} \\")
             else:
-                launch_cmd.append(f"    {arg} {value} \\")
+                launch_cmd.append(
+                    f"    {arg} {self._format_engine_arg_value(value)} \\"
+                )
 
         # A known bug in vLLM requires setting backend to ray for multi-node
         # Remove this when the bug is fixed
@@ -352,7 +375,9 @@ class SlurmScriptGenerator:
             if isinstance(value, bool):
                 launch_cmd.append(f"    {arg} \\")
             else:
-                launch_cmd.append(f"    {arg} {value} \\")
+                launch_cmd.append(
+                    f"    {arg} {self._format_engine_arg_value(value)} \\"
+                )
 
         # If a key is already exported in the cluster job environment, enable
         # vLLM's bearer-token auth without writing the secret to generated files.
@@ -369,6 +394,128 @@ class SlurmScriptGenerator:
             launch_cmd.append("    --distributed-executor-backend ray \\")
 
         return "\n".join(launch_cmd).rstrip(" \\")
+
+    def _generate_multinode_vllm_container_launch_cmd(self) -> str:
+        """Generate a multi-node vLLM launch with the driver on the Ray head.
+
+        Ray 2.55 resolves the driver's local node by discovering a local raylet
+        process. Start Ray head and vLLM inside the same head-node container so
+        that discovery works while keeping ``--containall`` enabled.
+        """
+        image_path = self.params.get("image_path") or IMAGE_PATH[self.engine]
+        container_cmd = SLURM_SCRIPT_TEMPLATE["container_command"].format(
+            env_str=self.env_str,
+            image_path=image_path,
+        )
+        work_dir = str(self.params.get("work_dir", str(Path.home())))
+        runtime_dir = f"{work_dir}/.vec-inf-runtime-$SLURM_JOB_ID"
+        head_script = f"{runtime_dir}/head_vllm.sh"
+
+        vllm_lines = self._vllm_serve_command_lines()
+
+        launch_cmd = [
+            "\n# Start Ray head and vLLM in the same head-node container",
+            f'vec_inf_runtime_dir="{runtime_dir}"',
+            'mkdir -p "$vec_inf_runtime_dir"',
+            'head_ready_file="$vec_inf_runtime_dir/ray-head-ready"',
+            'workers_started_file="$vec_inf_runtime_dir/ray-workers-started"',
+            'rm -f "$head_ready_file" "$workers_started_file"',
+            f'head_launch_script="{head_script}"',
+            'cat > "$head_launch_script" <<\'VEC_INF_HEAD_SCRIPT\'',
+            "#!/bin/bash",
+            "set -euo pipefail",
+            'head_node_ip="$1"',
+            'head_node_port="$2"',
+            'cpus_per_task="$3"',
+            'head_ready_file="$4"',
+            'workers_started_file="$5"',
+            'server_port_number="$6"',
+            'export VLLM_HOST_IP="$head_node_ip"',
+            'export HOST_IP="$head_node_ip"',
+            'export RAY_NODE_IP_ADDRESS="$head_node_ip"',
+            'export RAY_OVERRIDE_NODE_IP_ADDRESS="$head_node_ip"',
+            'export RAY_ADDRESS="$head_node_ip:$head_node_port"',
+            'echo "Starting Ray HEAD at $head_node_ip:$head_node_port"',
+            (
+                'ray start --head --node-ip-address="$head_node_ip" '
+                '--port="$head_node_port" --num-cpus "$cpus_per_task" '
+                f'--num-gpus {self.params["gpus_per_node"]}'
+            ),
+            'touch "$head_ready_file"',
+            'echo "Waiting for Ray workers to be started..."',
+            'while [ ! -f "$workers_started_file" ]; do sleep 1; done',
+            'echo "Starting vLLM on Ray head"',
+            *vllm_lines,
+            "VEC_INF_HEAD_SCRIPT",
+            'chmod +x "$head_launch_script"',
+            'echo "Starting HEAD and vLLM at $head_node"',
+            'srun --nodes=1 --ntasks=1 -w "$head_node" \\',
+            f"    {container_cmd}",
+            (
+                '    bash "$head_launch_script" "$head_node_ip" "$head_node_port" '
+                '"$SLURM_CPUS_PER_TASK" "$head_ready_file" '
+                '"$workers_started_file" "$server_port_number" &'
+            ),
+            "head_vllm_pid=$!",
+            'for _ in $(seq 1 120); do',
+            '    if [ -f "$head_ready_file" ]; then break; fi',
+            "    sleep 1",
+            "done",
+            'if [ ! -f "$head_ready_file" ]; then',
+            '    echo "[ERROR] Ray head did not become ready." >&2',
+            '    exit 1',
+            "fi",
+            "\n# Start Ray worker nodes",
+            "worker_num=$((SLURM_JOB_NUM_NODES - 1))",
+            "for ((i = 1; i <= worker_num; i++)); do",
+            "    node_i=${nodes_array[$i]}",
+            '    echo "Starting WORKER $i at $node_i"',
+            '    node_ip=$(srun --nodes=1 --ntasks=1 -w "$node_i" hostname --ip-address)',
+            '    echo "Node ip $node_ip"',
+            '    srun --nodes=1 --ntasks=1 -w "$node_i" \\',
+            f"        {container_cmd}",
+            '        bash -c "export VLLM_HOST_IP=$node_ip && export HOST_IP=$node_ip && \\',
+            '        export RAY_NODE_IP_ADDRESS=$node_ip && export RAY_OVERRIDE_NODE_IP_ADDRESS=$node_ip && \\',
+            '        ray start --address "$ray_head" \\',
+            '        --node-ip-address="$node_ip" \\',
+            f'        --num-cpus "$SLURM_CPUS_PER_TASK" --num-gpus {self.params["gpus_per_node"]} --block" &',
+            "    sleep 5",
+            "done",
+            'touch "$workers_started_file"',
+            'wait "$head_vllm_pid"',
+        ]
+
+        return "\n".join(launch_cmd)
+
+    def _vllm_serve_command_lines(self) -> list[str]:
+        """Return shell lines for the vLLM serve command."""
+        lines = [
+            f"vllm serve {self._format_engine_arg_value(self.model_weights_path)} \\",
+            (
+                "    --served-model-name "
+                f"{self._format_engine_arg_value(self.params['model_name'])} \\"
+            ),
+            '    --host "$head_node_ip" \\',
+            '    --port "$server_port_number" \\',
+        ]
+
+        for arg, value in self.params["engine_args"].items():
+            if isinstance(value, bool):
+                lines.append(f"    {arg} \\")
+            else:
+                lines.append(
+                    f"    {arg} {self._format_engine_arg_value(value)} \\"
+                )
+
+        lines.append(
+            '    ${VEC_INF_API_KEY:+--api-key} ${VEC_INF_API_KEY:+"$VEC_INF_API_KEY"} \\'
+        )
+
+        if "--distributed-executor-backend" not in self.params["engine_args"]:
+            lines.append("    --distributed-executor-backend ray \\")
+
+        lines[-1] = lines[-1].rstrip(" \\")
+        return lines
 
     def _generate_multinode_sglang_launch_cmd(self) -> str:
         """Generate the launch command for multi-node sglang setup.
@@ -402,7 +549,9 @@ class SlurmScriptGenerator:
             if isinstance(value, bool):
                 engine_arg_str += f"            {arg} \\\n"
             else:
-                engine_arg_str += f"            {arg} {value} \\\n"
+                engine_arg_str += (
+                    f"            {arg} {self._format_engine_arg_value(value)} \\\n"
+                )
 
         return launch_cmd.replace(
             "SGLANG_ARGS_PLACEHOLDER", engine_arg_str.rstrip("\\\n")
@@ -542,7 +691,9 @@ class BatchSlurmScriptGenerator:
             if isinstance(value, bool):
                 launch_lines.append(f"    {arg} \\")
             else:
-                launch_lines.append(f"    {arg} {value} \\")
+                launch_lines.append(
+                    f"    {arg} {SlurmScriptGenerator._format_engine_arg_value(value)} \\"
+                )
 
         if model_params["engine"] == "vllm":
             launch_lines.append(

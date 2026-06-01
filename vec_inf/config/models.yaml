@@ -931,6 +931,25 @@ models:
       --tensor-parallel-size: 8
     sglang_args:
       --tensor-parallel-size: 8
+  Kimi-K2.6:
+    model_family: Kimi-K2.6
+    model_type: LLM
+    gpus_per_node: 4
+    num_nodes: 4
+    resource_type: h100
+    cpus_per_task: 6
+    mem-per-node: 60G
+    vocab_size: 163840
+    vllm_args:
+      --tensor-parallel-size: 16
+      --distributed-executor-backend: ray
+      --trust-remote-code: true
+      --enable-auto-tool-choice: true
+      --tool-call-parser: kimi_k2
+      --reasoning-parser: kimi_k2
+      --mm-encoder-tp-mode: data
+    sglang_args:
+      --tensor-parallel-size: 16
   whisper-large-v3:
     model_family: whisper-large-v3
     model_type: Audio

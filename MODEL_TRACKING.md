@@ -236,6 +236,7 @@ This document tracks all model weights available in the `/model-weights` directo
 |:------|:-------------|
 | `Kimi-K2-Instruct` | ✅ |
 | `Kimi-K2.5` | ✅ |
+| `Kimi-K2.6` | ✅ |
 
 #### Mistral AI: Ministral
 | Model | Configuration |

@@ -1,0 +1,15 @@
+async-scheduling: true
+performance-mode: interactivity
+stream-interval: 8
+max-num-batched-tokens: 16384
+max-num-seqs: 1
+cudagraph-capture-sizes: [1]
+
+compilation-config: >
+  {"mode":"VLLM_COMPILE",
+   "cudagraph_mode":"FULL_AND_PIECEWISE",
+   "cudagraph_num_of_warmups":1}
+
+# speculative-config:
+#   model: /gpfs/scratch/bsc70/hpai/storage/projects/heka/models/gemma-4-31B-it-assistant
+#   num_speculative_tokens: 4

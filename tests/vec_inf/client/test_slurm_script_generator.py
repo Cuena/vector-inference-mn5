@@ -138,7 +138,11 @@ class TestSlurmScriptGenerator:
         assert generator.model_weights_path == "/path/to/model_weights/test-model"
         assert (
             generator.env_str
-            == "--env CACHE_DIR=/cache,MY_VAR=5,VLLM_CACHE_ROOT=/cache/vllm"
+            == "--env CACHE_DIR=/cache,MY_VAR=5,VLLM_CACHE_ROOT=/cache/vllm,"
+            "VLLM_HOST_IP=${VLLM_HOST_IP:-},HOST_IP=${HOST_IP:-},"
+            "RAY_ADDRESS=${RAY_ADDRESS:-},"
+            "RAY_NODE_IP_ADDRESS=${RAY_NODE_IP_ADDRESS:-},"
+            "RAY_OVERRIDE_NODE_IP_ADDRESS=${RAY_OVERRIDE_NODE_IP_ADDRESS:-}"
         )
 
     def test_init_singularity_no_bind(self, basic_params):
@@ -193,8 +197,18 @@ class TestSlurmScriptGenerator:
         assert "ray start --address" in setup
         assert "scontrol show hostnames" in setup
         assert "worker_num=$((SLURM_JOB_NUM_NODES - 1))" in setup
+        assert "export RAY_ADDRESS=$ray_head" in setup
+        assert "export SINGULARITYENV_RAY_ADDRESS=$ray_head" in setup
+        assert "export APPTAINERENV_RAY_ADDRESS=$ray_head" in setup
         assert "export APPTAINERENV_VLLM_HOST_IP=$head_node_ip" in setup
         assert "export APPTAINERENV_HOST_IP=$head_node_ip" in setup
+        assert "export RAY_NODE_IP_ADDRESS=$head_node_ip" in setup
+        assert "export RAY_OVERRIDE_NODE_IP_ADDRESS=$head_node_ip" in setup
+        assert "export APPTAINERENV_RAY_NODE_IP_ADDRESS=$head_node_ip" in setup
+        assert (
+            "export APPTAINERENV_RAY_OVERRIDE_NODE_IP_ADDRESS=$head_node_ip" in setup
+        )
+        assert '--node-ip-address="$node_ip"' in setup
 
     def test_generate_server_setup_singularity(self, singularity_params):
         """Test server setup with Singularity container."""
@@ -211,7 +225,10 @@ class TestSlurmScriptGenerator:
         assert "unset LD_PRELOAD" in setup
         assert "unset SINGULARITYENV_LD_LIBRARY_PATH" in setup
         assert "unset APPTAINERENV_LD_LIBRARY_PATH" in setup
-        assert "/dev,/tmp,/path/to/workdir,/path/to/workdir/.vec-inf-cache:$HOME/.cache" in setup
+        assert (
+            "/dev,/tmp,/path/to/workdir,"
+            "/path/to/workdir/.vec-inf-cache:$HOME/.cache"
+        ) in setup
 
     def test_generate_server_setup_singularity_cuda_shim_default(self, singularity_params):
         """Test CUDA compat shim default behavior for container runs."""
@@ -268,6 +285,24 @@ class TestSlurmScriptGenerator:
         assert "--enforce-eager" in launch_cmd
         assert '${VEC_INF_API_KEY:+--api-key}' in launch_cmd
         assert '${VEC_INF_API_KEY:+"$VEC_INF_API_KEY"}' in launch_cmd
+
+    def test_generate_launch_cmd_multinode_vllm_runs_driver_on_ray_head(
+        self, multinode_params
+    ):
+        """Multi-node vLLM should start Ray head and driver together."""
+        params = multinode_params.copy()
+        params["venv"] = CONTAINER_MODULE_NAME
+        params["image_path"] = "/path/to/image.sif"
+
+        generator = SlurmScriptGenerator(params)
+        launch_cmd = generator._generate_launch_cmd()
+
+        assert "vllm serve /path/to/model_weights/test-model" in launch_cmd
+        assert "--cleanenv" in launch_cmd
+        assert "--containall" in launch_cmd
+        assert "ray start --head" in launch_cmd
+        assert "Starting HEAD and vLLM at $head_node" in launch_cmd
+        assert 'wait "$head_vllm_pid"' in launch_cmd
 
     def test_generate_launch_cmd_sglang(self, basic_params):
         """Test SGLang launch command generation."""
@@ -411,6 +446,18 @@ class TestSlurmScriptGenerator:
         assert "--trust-remote-code" in launch_cmd
         assert "--disable-log-stats" in launch_cmd
         assert "--tensor-parallel-size 2" in launch_cmd
+
+    def test_generate_launch_cmd_quotes_json_arg_values(self, basic_params):
+        """JSON-shaped engine args should survive shell parsing."""
+        params = basic_params.copy()
+        params["engine_args"] = {
+            "--limit-mm-per-prompt": '{"image":0,"audio":0}',
+        }
+
+        generator = SlurmScriptGenerator(params)
+        launch_cmd = generator._generate_launch_cmd()
+
+        assert "--limit-mm-per-prompt '{\"image\":0,\"audio\":0}'" in launch_cmd
 
     @patch("builtins.open", new_callable=mock_open)
     @patch("vec_inf.client._slurm_script_generator.datetime")

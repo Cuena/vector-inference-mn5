@@ -220,11 +220,28 @@ def test_load_config_mn5_profile_includes_gemma4_agentic_profile(
     assert gemma.vllm_args.get("--kv-cache-dtype") == "fp8_e4m3"
     assert gemma.vllm_args.get("--reasoning-parser") == "gemma4"
     assert gemma.vllm_args.get("--tool-call-parser") == "gemma4"
-    assert gemma.vllm_args.get("--limit-mm-per-prompt") == "image=0,audio=0"
+    assert gemma.vllm_args.get("--limit-mm-per-prompt") == '{"image":0,"audio":0}'
+    assert gemma.vllm_args.get("--config").endswith(
+        "compilation_configs/gemma4_single_agent.yaml"
+    )
     assert (
         gemma.image_path
-        == "/gpfs/scratch/bsc70/singularity/vllm_openai_0.19.0.sif"
+        == "/gpfs/scratch/bsc70/singularity/vllm_openai_0.20.1-cu129.sif"
     )
+
+    config_path = Path(gemma.vllm_args["--config"])
+    assert config_path.is_file()
+    config_text = config_path.read_text()
+    assert "performance-mode: interactivity" in config_text
+    assert "max-num-seqs: 1" in config_text
+    assert "max-num-batched-tokens: 16384" in config_text
+    assert "cudagraph-capture-sizes: [1]" in config_text
+    assert "speculative-config:" in config_text
+    assert (
+        "model: /gpfs/scratch/bsc70/hpai/storage/projects/heka/models/"
+        "gemma-4-31B-it-assistant"
+    ) in config_text
+    assert "num_speculative_tokens: 4" in config_text
 
 
 def test_load_config_mn5_profile_includes_qwen3_coder_next(
@@ -250,6 +267,39 @@ def test_load_config_mn5_profile_includes_qwen3_coder_next(
     assert qwen.num_nodes == 1
     assert qwen.bind == "/home/bsc/$USER"
     assert qwen.vllm_args.get("--tool-call-parser") == "qwen3_coder"
+
+
+def test_load_config_mn5_profile_includes_kimi_k26(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The MN5 profile should expose Kimi-K2.6 with its pinned 0.20.1 image."""
+    mn5_config_dir = (
+        Path(__file__).resolve().parents[3] / "vec_inf" / "config" / "marenostrum5"
+    )
+
+    with monkeypatch.context() as m:
+        m.setenv("VEC_INF_CONFIG_DIR", str(mn5_config_dir))
+        configs = load_config()
+
+    config_map = {model.model_name: model for model in configs}
+    assert "Kimi-K2.6" in config_map
+
+    kimi = config_map["Kimi-K2.6"]
+    assert kimi.model_family == "Kimi"
+    assert kimi.model_variant == "K2.6"
+    assert kimi.model_type == "LLM"
+    assert kimi.gpus_per_node == 4
+    assert kimi.num_nodes == 4
+    assert kimi.bind == "/home/bsc/$USER"
+    assert (
+        kimi.image_path
+        == "/gpfs/scratch/bsc70/singularity/vllm_openai_0.20.1-cu129-deepgemm.sif"
+    )
+    assert kimi.vllm_args.get("--distributed-executor-backend") == "ray"
+    assert kimi.vllm_args.get("--tensor-parallel-size") == 16
+    assert kimi.vllm_args.get("--tool-call-parser") == "kimi_k2"
+    assert kimi.vllm_args.get("--reasoning-parser") == "kimi_k2"
+    assert kimi.vllm_args.get("--config", "").endswith("compilation_configs/kimi_single.yaml")
 
 
 def test_load_config_with_user_override(tmp_path, monkeypatch):
