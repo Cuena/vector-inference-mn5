@@ -99,6 +99,39 @@ models:
       --reasoning-parser: kimi_k2
       --config: "@repo/compilation_configs/kimi_single.yaml"
 
+  Kimi-K2.7-Code:
+      model_family: Kimi
+      model_variant: K2.7-Code
+      model_type: LLM
+      gpus_per_node: 4
+      num_nodes: 4
+      vocab_size: 163840
+      qos: acc_debug
+      time: "02:00:00"
+      partition: acc
+      account: bsc70
+      venv: "singularity"
+      image_path: "/gpfs/scratch/bsc70/singularity/vllm_openai_0.20.1-cu129-deepgemm.sif"
+      cuda_compat_shim: false
+      bind: "/home/bsc/$USER"
+      env:
+        XDG_CACHE_HOME: "/cache"
+        TMPDIR: "/tmp"
+        TMP: "/tmp"
+        TEMP: "/tmp"
+        TORCHINDUCTOR_CACHE_DIR: "/cache/torchinductor"
+        TRITON_CACHE_DIR: "/cache/triton"
+      vllm_args:
+        --distributed-executor-backend: ray
+        --trust-remote-code: true
+        --max-model-len: 100000
+        --gpu-memory-utilization: 0.8
+        --tensor-parallel-size: 16
+        --enable-auto-tool-choice: true
+        --tool-call-parser: kimi_k2
+        --reasoning-parser: kimi_k2
+        --config: "@repo/compilation_configs/kimi_multi.yaml"
+
   NVIDIA-Nemotron-3-Super-120B-A12B-FP8:
     model_family: NVIDIA-Nemotron-3
     model_variant: Super-120B-A12B-FP8
