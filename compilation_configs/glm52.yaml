@@ -1,0 +1,20 @@
+max-model-len: 32768
+gpu-memory-utilization: 0.92
+# NOTE: vLLM async scheduling is currently incompatible with the `ray`
+# distributed executor backend. Keep this disabled for multi-node Ray launches.
+async-scheduling: false
+stream-interval: 16
+max-cudagraph-capture-size: 512
+max-num-batched-tokens: 4096
+max-num-seqs: 4
+
+tool-call-parser: glm47
+reasoning-parser: glm45
+enable-auto-tool-choice: true
+
+speculative-config: '{"method":"mtp","num_speculative_tokens":5}'
+
+compilation-config: >
+  {"mode":"VLLM_COMPILE",
+   "cudagraph_mode":"FULL_AND_PIECEWISE",
+   "cudagraph_num_of_warmups":1}
