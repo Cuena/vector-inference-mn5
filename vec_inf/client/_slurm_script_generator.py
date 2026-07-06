@@ -122,6 +122,9 @@ class SlurmScriptGenerator:
                     "RAY_ADDRESS=${RAY_ADDRESS:-}",
                     "RAY_NODE_IP_ADDRESS=${RAY_NODE_IP_ADDRESS:-}",
                     "RAY_OVERRIDE_NODE_IP_ADDRESS=${RAY_OVERRIDE_NODE_IP_ADDRESS:-}",
+                    "NCCL_IB_DISABLE=${NCCL_IB_DISABLE:-}",
+                    "NCCL_IB_GID_INDEX=${NCCL_IB_GID_INDEX:-}",
+                    "NCCL_DEBUG=INFO",
                 ]
             )
             return f"--env {','.join(env_pairs)}"

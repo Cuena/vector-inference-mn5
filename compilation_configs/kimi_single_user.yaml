@@ -1,0 +1,15 @@
+optimization-level: 3
+performance-mode: interactivity
+# vLLM 0.20.1 rejects async scheduling when the distributed executor is Ray.
+async-scheduling: false
+max-num-seqs: 1
+max-num-batched-tokens: 8192
+stream-interval: 20
+
+compilation-config: >
+  {"mode":"VLLM_COMPILE",
+   "cudagraph_mode":"FULL_AND_PIECEWISE",
+   "cudagraph_capture_sizes":[1],
+   "compile_sizes":["cudagraph_capture_sizes"],
+   "cudagraph_num_of_warmups":1,
+   "pass_config":{"fuse_allreduce_rms":true}}

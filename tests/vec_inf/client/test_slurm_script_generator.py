@@ -142,7 +142,9 @@ class TestSlurmScriptGenerator:
             "VLLM_HOST_IP=${VLLM_HOST_IP:-},HOST_IP=${HOST_IP:-},"
             "RAY_ADDRESS=${RAY_ADDRESS:-},"
             "RAY_NODE_IP_ADDRESS=${RAY_NODE_IP_ADDRESS:-},"
-            "RAY_OVERRIDE_NODE_IP_ADDRESS=${RAY_OVERRIDE_NODE_IP_ADDRESS:-}"
+            "RAY_OVERRIDE_NODE_IP_ADDRESS=${RAY_OVERRIDE_NODE_IP_ADDRESS:-},"
+            "NCCL_IB_DISABLE=${NCCL_IB_DISABLE:-},"
+            "NCCL_IB_GID_INDEX=${NCCL_IB_GID_INDEX:-},NCCL_DEBUG=INFO"
         )
 
     def test_init_singularity_no_bind(self, basic_params):
