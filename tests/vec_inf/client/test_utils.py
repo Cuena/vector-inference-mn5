@@ -269,10 +269,10 @@ def test_load_config_mn5_profile_includes_qwen3_coder_next(
     assert qwen.vllm_args.get("--tool-call-parser") == "qwen3_coder"
 
 
-def test_load_config_mn5_profile_includes_kimi_k26(
+def test_load_config_mn5_profile_kimi_k26_matches_k27_optimizations(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The MN5 profile should expose Kimi-K2.6 with its pinned 0.20.1 image."""
+    """Kimi-K2.6 should use the same optimized serving setup as Kimi-K2.7."""
     mn5_config_dir = (
         Path(__file__).resolve().parents[3] / "vec_inf" / "config" / "marenostrum5"
     )
@@ -283,14 +283,17 @@ def test_load_config_mn5_profile_includes_kimi_k26(
 
     config_map = {model.model_name: model for model in configs}
     assert "Kimi-K2.6" in config_map
+    assert "Kimi-K2.7-Code" in config_map
 
     kimi = config_map["Kimi-K2.6"]
+    kimi_k27 = config_map["Kimi-K2.7-Code"]
     assert kimi.model_family == "Kimi"
     assert kimi.model_variant == "K2.6"
     assert kimi.model_type == "LLM"
     assert kimi.gpus_per_node == 4
     assert kimi.num_nodes == 4
-    assert kimi.bind == "/home/bsc/$USER"
+    assert kimi.bind == kimi_k27.bind
+    assert kimi.env == kimi_k27.env
     assert (
         kimi.image_path
         == "/gpfs/scratch/bsc70/singularity/vllm_openai_0.20.1-cu129-deepgemm.sif"
@@ -299,7 +302,13 @@ def test_load_config_mn5_profile_includes_kimi_k26(
     assert kimi.vllm_args.get("--tensor-parallel-size") == 16
     assert kimi.vllm_args.get("--tool-call-parser") == "kimi_k2"
     assert kimi.vllm_args.get("--reasoning-parser") == "kimi_k2"
-    assert kimi.vllm_args.get("--config", "").endswith("compilation_configs/kimi_single.yaml")
+    assert kimi.vllm_args == kimi_k27.vllm_args
+    assert kimi.vllm_args.get("--language-model-only") is True
+    assert kimi.vllm_args.get("--safetensors-load-strategy") == "eager"
+    assert kimi.vllm_args.get("--enable-ep-weight-filter") is True
+    assert kimi.vllm_args.get("--enable-expert-parallel") is True
+    assert '"method":"eagle3"' in kimi.vllm_args.get("--speculative-config", "")
+    assert kimi.vllm_args.get("--config", "").endswith("compilation_configs/kimi_multi.yaml")
 
 
 def test_load_config_with_user_override(tmp_path, monkeypatch):

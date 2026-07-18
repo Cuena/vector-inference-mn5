@@ -80,8 +80,9 @@ models:
     venv: "singularity"
     image_path: "/gpfs/scratch/bsc70/singularity/vllm_openai_0.20.1-cu129-deepgemm.sif"
     cuda_compat_shim: false
-    bind: "/home/bsc/$USER"
+    bind: "/home/bsc/$USER,/gpfs/scratch/bsc70/hpai/storage/projects/heka/models/kimi-k2.6-eagle3-mla:/gpfs/scratch/bsc70/hpai/storage/projects/heka/models/kimi-k2.6-eagle3-mla"
     env:
+      DRAFT_MODEL: "/gpfs/scratch/bsc70/hpai/storage/projects/heka/models/kimi-k2.6-eagle3-mla"
       XDG_CACHE_HOME: "/cache"
       TMPDIR: "/tmp"
       TMP: "/tmp"
@@ -91,13 +92,18 @@ models:
     vllm_args:
       --distributed-executor-backend: ray
       --trust-remote-code: true
-      --max-model-len: 100000
+      --max-model-len: 120000
       --gpu-memory-utilization: 0.8
       --tensor-parallel-size: 16
       --enable-auto-tool-choice: true
+      --language-model-only: true
+      --safetensors-load-strategy: eager
+      --enable-ep-weight-filter: true
+      --enable-expert-parallel: true
       --tool-call-parser: kimi_k2
       --reasoning-parser: kimi_k2
-      --config: "@repo/compilation_configs/kimi_single.yaml"
+      --speculative-config: "{\"model\":\"/gpfs/scratch/bsc70/hpai/storage/projects/heka/models/kimi-k2.6-eagle3-mla\",\"method\":\"eagle3\",\"num_speculative_tokens\":3}"
+      --config: "@repo/compilation_configs/kimi_multi.yaml"
 
   Kimi-K2.7-Code:
     model_family: Kimi
