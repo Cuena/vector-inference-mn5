@@ -1,15 +1,36 @@
 """Tests for the MN5 setup wizard."""
 
+import os
+import subprocess
+from pathlib import Path
+
 from vec_inf.mn5_setup_wizard import (
     DEFAULT_LIGHTWEIGHT_MODEL,
+    REMOTE_JQ_MODULE_LINE,
     WizardConfig,
+    build_defaults,
     build_launch_run_prompt,
+    build_remote_jq_setup_command,
     build_setup_run_prompt,
     describe_launch_effects,
     describe_setup_effects,
-    build_defaults,
     render_launch_env,
 )
+
+
+def test_remote_jq_setup_command_is_idempotent(tmp_path: Path) -> None:
+    """The wizard should add the jq module line to remote bashrc only once."""
+    bashrc = tmp_path / ".bashrc"
+    bashrc.write_text("# Existing remote config\n", encoding="utf-8")
+    env = {**os.environ, "HOME": str(tmp_path)}
+    command = build_remote_jq_setup_command()
+
+    subprocess.run(["sh", "-c", command], check=True, env=env)
+    subprocess.run(["sh", "-c", command], check=True, env=env)
+
+    assert bashrc.read_text(encoding="utf-8").splitlines().count(
+        REMOTE_JQ_MODULE_LINE
+    ) == 1
 
 
 def test_build_defaults_uses_repo_name() -> None:
@@ -149,7 +170,7 @@ def test_describe_launch_effects_explains_actions_in_words() -> None:
 
 
 def test_run_prompts_are_short_and_direct() -> None:
-    """The execution prompts should stay concise once the explanation is already shown."""
+    """The prompts should stay concise after the explanation is shown."""
     assert build_setup_run_prompt() == "Run first_time_setup.sh now?"
     assert build_launch_run_prompt("Llama-3.2-3B-Instruct") == (
         "Launch the smoke-test model `Llama-3.2-3B-Instruct` now?"

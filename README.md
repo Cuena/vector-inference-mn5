@@ -14,6 +14,9 @@ This repository provides an easy-to-use solution to run inference servers on [Sl
 
 This repository includes MN5 helper scripts, an MN5 config profile, and a setup wizard that writes the launcher config for you.
 
+The setup wizard offers to add the required `module load jq` line to your remote
+MN5 `~/.bashrc` automatically.
+
 ### Recommended first run
 
 1. Clone and enter the repository:

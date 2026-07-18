@@ -2,6 +2,9 @@
 
 This page documents a local-to-MN5 workflow where `vec-inf` runs on MareNostrum5 and your local machine connects through an SSH tunnel.
 
+The setup wizard offers to add the required `module load jq` line to your remote
+MN5 `~/.bashrc` automatically.
+
 ## Quickstart
 
 1. Clone and enter the repository:
